@@ -1,13 +1,18 @@
 # openclaw-ephemeral
 
-`docker.io/safrano9999/openclaw-ephemeral` is the common OpenClaw image layer
-used before Safrano plugins are added.
+[![Docker Hub](https://img.shields.io/badge/Docker_Hub-openclaw--ephemeral-0ea5e9)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
+[![Image tags](https://img.shields.io/badge/image-tags-2563eb)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags)
+[![Deterministic source](https://img.shields.io/badge/source-openclaw--deterministic-111827)](https://github.com/safrano9999/openclaw-deterministic)
+
+[`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
+is the public common OpenClaw image layer used before Safrano plugins are
+added.
 
 The image combines only these established components:
 
-- `ghcr.io/openclaw/openclaw:2026.7.1`
-- `openclaw-deterministic` release `2026.7.1-deterministic.1`
-- NOTE release ZIP `2026.7.36`
+- [`ghcr.io/openclaw/openclaw:2026.7.1`](https://github.com/openclaw/openclaw/pkgs/container/openclaw)
+- [`openclaw-deterministic` release `2026.7.1-deterministic.1`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.1)
+- [NOTE release ZIP `2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36)
 - the environment-driven `openclaw-ephemeral.py` runtime
 
 Patch and NOTE archives are downloaded from their pinned releases during the
@@ -66,3 +71,26 @@ variables. Gateway and Telegram configuration use the existing
 
 The container runs as `root`, matching the existing Safrano and Fedora OpenClaw
 images.
+
+## Public image
+
+Pull the ready-to-run image with Docker:
+
+```bash
+docker pull docker.io/safrano9999/openclaw-ephemeral:latest
+```
+
+or Podman:
+
+```bash
+podman pull docker.io/safrano9999/openclaw-ephemeral:latest
+```
+
+Published tags are listed on
+[Docker Hub](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags).
+The deterministic patch is maintained in
+[`openclaw-deterministic`](https://github.com/safrano9999/openclaw-deterministic),
+its current upstream submission is
+[openclaw/openclaw#115878](https://github.com/openclaw/openclaw/pull/115878),
+and `dummy/note` uses the separate
+[NOTE plugin](https://github.com/safrano9999/NOTE).
