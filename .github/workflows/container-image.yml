@@ -79,6 +79,8 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: |
+            OPENCLAW_VERSION=2026.7.1
           platforms: linux/amd64
           pull: true
           no-cache: true
@@ -174,3 +176,36 @@ jobs:
 
           test "$(docker image inspect "$image" --format '{{.Config.User}}')" = root
           docker buildx imagetools inspect "$image" >/dev/null
+
+  publish-github-release:
+    name: Publish GitHub release page
+    needs: build-test-publish
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create or update release from RELEASE.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          title="openclaw-ephemeral ${tag}"
+          if gh release view "$tag" \
+              --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --notes-file RELEASE.md
+          else
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$title" \
+              --notes-file RELEASE.md
+          fi

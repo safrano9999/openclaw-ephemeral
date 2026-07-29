@@ -3,6 +3,7 @@
 [![Docker Hub](https://img.shields.io/badge/Docker_Hub-openclaw--ephemeral-0ea5e9)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
 [![Image tags](https://img.shields.io/badge/image-tags-2563eb)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags)
 [![Deterministic source](https://img.shields.io/badge/source-openclaw--deterministic-111827)](https://github.com/safrano9999/openclaw-deterministic)
+[![Release overview](https://img.shields.io/badge/release-overview-7c3aed)](RELEASE.md)
 
 [`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
 is the public common OpenClaw image layer used before Safrano plugins are
@@ -10,13 +11,15 @@ added.
 
 The image combines only these established components:
 
-- [`ghcr.io/openclaw/openclaw:2026.7.1`](https://github.com/openclaw/openclaw/pkgs/container/openclaw)
+- `ghcr.io/openclaw/openclaw:2026.7.1`
 - [`openclaw-deterministic` release `2026.7.1-deterministic.1`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.1)
 - [NOTE release ZIP `2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36)
 - the environment-driven `openclaw-ephemeral.py` runtime
 
 Patch and NOTE archives are downloaded from their pinned releases during the
 image build and verified by SHA-256. They are not vendored in this repository.
+See the [release overview](RELEASE.md) for the three public components, their
+responsibilities, and the immutable version pins used by the image.
 
 At every start the runtime creates `/root/.openclaw/openclaw.json` from
 injected environment variables without reading or merging an older JSON file.
@@ -90,7 +93,5 @@ Published tags are listed on
 [Docker Hub](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags).
 The deterministic patch is maintained in
 [`openclaw-deterministic`](https://github.com/safrano9999/openclaw-deterministic),
-its current upstream submission is
-[openclaw/openclaw#115878](https://github.com/openclaw/openclaw/pull/115878),
 and `dummy/note` uses the separate
 [NOTE plugin](https://github.com/safrano9999/NOTE).
