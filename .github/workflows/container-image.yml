@@ -137,19 +137,19 @@ jobs:
             "$image" /tmp/openclaw-ephemeral-smoke.sh
 
           hook_root="$RUNNER_TEMP/openclaw-ephemeral-runtime.d"
-          hook_output="$RUNNER_TEMP/openclaw-ephemeral-hook-order"
+          hook_output_dir="$RUNNER_TEMP/openclaw-ephemeral-hook-output"
           install -d -m 0755 \
             "$hook_root/pre-config.d" \
             "$hook_root/post-config.d" \
             "$hook_root/pre-gateway.d"
-          : > "$hook_output"
+          install -d -m 0777 "$hook_output_dir"
 
           write_hook() {
             local path="$1"
             local marker="$2"
             cat > "$path" <<SH
           #!/bin/sh
-          printf '%s\n' '$marker' >> /tmp/openclaw-ephemeral-hook-order
+          printf '%s\n' '$marker' >> /tmp/hook-output/order
           SH
             chmod 0755 "$path"
           }
@@ -163,14 +163,14 @@ jobs:
           docker run --rm \
             -e OPENCLAW_BIN=/bin/true \
             -v "$hook_root:/usr/local/share/openclaw-ephemeral/runtime.d:ro" \
-            -v "$hook_output:/tmp/openclaw-ephemeral-hook-order" \
+            -v "$hook_output_dir:/tmp/hook-output" \
             "$image"
           printf '%s\n' \
             pre-config-10 \
             pre-config-20 \
             post-config-10 \
             pre-gateway-10 \
-            | diff -u - "$hook_output"
+            | diff -u - "$hook_output_dir/order"
 
           test "$(docker image inspect "$image" --format '{{.Config.User}}')" = root
           docker buildx imagetools inspect "$image" >/dev/null
