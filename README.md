@@ -30,6 +30,47 @@ The default model is `dummy/note`. `dummy/dummy` remains available, and normal
 native or OpenAI-v1 compatible providers remain available when their existing
 environment variables are injected.
 
+## Historical visible proof
+
+The preserved recording compares an unavailable normal model with the
+`dummy/dummy` route. Click either screenshot to open the corresponding MP4.
+
+<table>
+  <thead>
+    <tr>
+      <th width="50%">Unavailable model</th>
+      <th width="50%">Deterministic reply</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <a href="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-before.mp4">
+          <img src="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-before.png" alt="Telegram before the deterministic patch">
+        </a>
+      </td>
+      <td>
+        <a href="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-after.mp4">
+          <img src="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-after.png" alt="Telegram using the deterministic route">
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+The recordings predate the `2026.7.1` port and demonstrate the routing concept,
+not the byte-exact current reply text. The image workflow separately
+smoke-tests the pinned `2026.7.1` artifact.
+
+With `dummy/note`, NOTE claims an ordinary non-command message, stores it
+without an LLM request, acknowledges the save, and returns it through
+`/note show`.
+
+![NOTE full mode in Telegram](https://raw.githubusercontent.com/safrano9999/NOTE/2026.7.36/docs/full-mode.jpg)
+
+This NOTE screenshot illustrates the workflow on OpenClaw `2026.6.11`; it is
+not the image's `2026.7.1` build proof.
+
 ## Runtime
 
 ```text

@@ -18,6 +18,47 @@ float the embedded OpenClaw runtime: the base image and the
 `OPENCLAW_VERSION=2026.7.1` contract stay pinned until they are deliberately
 updated together.
 
+## Historical visible proof
+
+The preserved Telegram Desktop recording captures the route concept before and
+after `dummy/dummy`. Click a screenshot to open its MP4 recording.
+
+<table>
+  <thead>
+    <tr>
+      <th width="50%">Unavailable model</th>
+      <th width="50%">Deterministic reply</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <a href="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-before.mp4">
+          <img src="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-before.png" alt="Telegram before the deterministic patch">
+        </a>
+      </td>
+      <td>
+        <a href="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-after.mp4">
+          <img src="https://github.com/safrano9999/openclaw-deterministic/releases/download/2026.7.1-deterministic.1/deterministic-after.png" alt="Telegram using the deterministic route">
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+The recordings predate the `2026.7.1` port. They illustrate the routing
+behavior but are not byte-exact verification of the current reply wording; the
+release workflow supplies the actual pinned-image smoke test.
+
+NOTE full mode demonstrates the other deterministic path: an ordinary message
+is stored without an LLM request, acknowledged, and available through
+`/note show`.
+
+![NOTE full mode in Telegram](https://raw.githubusercontent.com/safrano9999/NOTE/2026.7.36/docs/full-mode.jpg)
+
+The NOTE screenshot was captured on OpenClaw `2026.6.11` and is included as a
+workflow illustration, not as `2026.7.1` build evidence.
+
 ## 1. openclaw-deterministic
 
 [`safrano9999/openclaw-deterministic`](https://github.com/safrano9999/openclaw-deterministic)
