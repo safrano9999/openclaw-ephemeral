@@ -104,11 +104,10 @@ jobs:
           set -euo pipefail
           image="${IMAGE_NAME}:${IMAGE_TAG}"
           docker pull "$image"
-          mkdir -p "$RUNNER_TEMP/openclaw-ephemeral-smoke"
-          chmod 0777 "$RUNNER_TEMP/openclaw-ephemeral-smoke"
-          docker run --rm \
-            -v "$RUNNER_TEMP/openclaw-ephemeral-smoke:/root/.openclaw" \
-            "$image" configure
+          smoke_script="$RUNNER_TEMP/openclaw-ephemeral-smoke.sh"
+          cat > "$smoke_script" <<'SH'
+          set -euo pipefail
+          /usr/local/bin/openclaw-ephemeral.py configure
           jq -e \
             '.agents.defaults.models["dummy/dummy"] == {} and
              .agents.defaults.models["dummy/note"] == {} and
@@ -118,9 +117,14 @@ jobs:
              .plugins.entries.note.hooks.allowConversationAccess == true and
              .tools.profile == "full" and
              .tools.exec.mode == "full"' \
-            "$RUNNER_TEMP/openclaw-ephemeral-smoke/openclaw.json" >/dev/null
-          test -s "$RUNNER_TEMP/openclaw-ephemeral-smoke/exec-approvals.json"
+            /root/.openclaw/openclaw.json >/dev/null
+          test -s /root/.openclaw/exec-approvals.json
+          test -f /root/.openclaw/extensions/note/openclaw.plugin.json
+          SH
+          chmod 0755 "$smoke_script"
+          docker run --rm \
+            -v "$smoke_script:/tmp/openclaw-ephemeral-smoke.sh:ro" \
+            --entrypoint bash \
+            "$image" /tmp/openclaw-ephemeral-smoke.sh
           test "$(docker image inspect "$image" --format '{{.Config.User}}')" = root
-          docker run --rm --entrypoint bash "$image" -lc \
-            'test -f /root/.openclaw/extensions/note/openclaw.plugin.json'
           docker buildx imagetools inspect "$image" >/dev/null
