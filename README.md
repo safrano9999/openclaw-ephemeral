@@ -30,6 +30,22 @@ openclaw-ephemeral.py run
 openclaw-ephemeral.py restart
 ```
 
+Only `run` executes runtime hooks. It scans these directories at the named
+lifecycle points:
+
+```text
+/usr/local/share/openclaw-ephemeral/runtime.d/pre-config.d   before configure
+/usr/local/share/openclaw-ephemeral/runtime.d/post-config.d  after configure and trusted policy
+/usr/local/share/openclaw-ephemeral/runtime.d/pre-gateway.d  immediately before gateway exec
+```
+
+Missing directories are empty phases. Entries are processed in lexical filename
+order; names must match `[A-Za-z0-9][A-Za-z0-9._-]*`. Symlinks and non-regular
+entries abort startup, regular files without an execute bit are ignored, and
+executable files run directly with the runtime environment and no implicit
+shell. A nonzero hook stops all later phases and prevents gateway exec.
+`configure` and `restart` do not scan hook directories.
+
 Recognized model variables include:
 
 ```text

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
+import stat
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from . import __version__
@@ -19,6 +22,12 @@ from .environment import (
 )
 
 TRUSTED_POLICY_SCRIPT = "/usr/local/bin/openclaw-ephemeral-yolo"
+RUNTIME_HOOK_ROOT = Path("/usr/local/share/openclaw-ephemeral/runtime.d")
+SAFE_RUNTIME_HOOK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+class RuntimeHookError(RuntimeError):
+    """Raised when a runtime hook directory or executable is unsafe or fails."""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -58,6 +67,67 @@ def _report(result: ConfigurationResult, stream: Any) -> None:
         print(f"Warning: {warning}", file=stream)
 
 
+def _runtime_hook_paths(phase: str) -> tuple[Path, ...]:
+    """Return validated executable hooks for one lifecycle phase."""
+
+    directory = RUNTIME_HOOK_ROOT / f"{phase}.d"
+    try:
+        directory_mode = directory.lstat().st_mode
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        raise RuntimeHookError(f"cannot inspect {directory}: {exc}") from exc
+
+    if stat.S_ISLNK(directory_mode):
+        raise RuntimeHookError(f"hook directory must not be a symlink: {directory}")
+    if not stat.S_ISDIR(directory_mode):
+        raise RuntimeHookError(f"hook path is not a directory: {directory}")
+
+    try:
+        entries = sorted(directory.iterdir(), key=lambda entry: entry.name)
+    except OSError as exc:
+        raise RuntimeHookError(f"cannot list {directory}: {exc}") from exc
+
+    hooks: list[Path] = []
+    for entry in entries:
+        if SAFE_RUNTIME_HOOK_NAME.fullmatch(entry.name) is None:
+            raise RuntimeHookError(f"unsafe hook name: {entry}")
+        try:
+            entry_mode = entry.lstat().st_mode
+        except OSError as exc:
+            raise RuntimeHookError(f"cannot inspect hook {entry}: {exc}") from exc
+        if stat.S_ISLNK(entry_mode):
+            raise RuntimeHookError(f"hook must not be a symlink: {entry}")
+        if not stat.S_ISREG(entry_mode):
+            raise RuntimeHookError(f"hook is not a regular file: {entry}")
+        if entry_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+            hooks.append(entry)
+    return tuple(hooks)
+
+
+def _run_runtime_hooks(
+    phase: str,
+    environ: Mapping[str, str],
+    runner: Callable[..., Any],
+) -> None:
+    """Execute one validated hook phase directly with the runtime environment."""
+
+    for hook in _runtime_hook_paths(phase):
+        try:
+            runner(
+                [str(hook)],
+                check=True,
+                env=environ,
+                shell=False,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeHookError(
+                f"hook failed with status {exc.returncode}: {hook}"
+            ) from exc
+        except OSError as exc:
+            raise RuntimeHookError(f"cannot execute hook {hook}: {exc}") from exc
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -73,6 +143,9 @@ def main(
     args = _parser().parse_args(argv)
     injected = dict(os.environ if environ is None else environ)
     try:
+        if args.mode == "run":
+            _run_runtime_hooks("pre-config", injected, runner)
+
         if opener is None:
             result = configure(injected, runner=runner)
         else:
@@ -88,6 +161,8 @@ def main(
             check=True,
             env=runtime_env,
         )
+        if args.mode == "run":
+            _run_runtime_hooks("post-config", runtime_env, runner)
         if args.mode == "configure":
             return 0
         command = openclaw_command(runtime_env)
@@ -109,6 +184,7 @@ def main(
             ]
             if runtime_env.get("OPENCLAW_GATEWAY_TOKEN", "").strip():
                 arguments.extend(("--auth", "token"))
+            _run_runtime_hooks("pre-gateway", runtime_env, runner)
             execvpe(arguments[0], arguments, runtime_env)
             raise RuntimeError("gateway exec unexpectedly returned")
 
@@ -120,6 +196,9 @@ def main(
         return 0
     except ConfigurationError as exc:
         print(f"Configuration error: {exc}", file=stderr)
+        return 2
+    except RuntimeHookError as exc:
+        print(f"Runtime hook error: {exc}", file=stderr)
         return 2
 
 

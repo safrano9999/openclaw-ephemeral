@@ -135,5 +135,42 @@ jobs:
             -v "$smoke_script:/tmp/openclaw-ephemeral-smoke.sh:ro" \
             --entrypoint bash \
             "$image" /tmp/openclaw-ephemeral-smoke.sh
+
+          hook_root="$RUNNER_TEMP/openclaw-ephemeral-runtime.d"
+          hook_output="$RUNNER_TEMP/openclaw-ephemeral-hook-order"
+          install -d -m 0755 \
+            "$hook_root/pre-config.d" \
+            "$hook_root/post-config.d" \
+            "$hook_root/pre-gateway.d"
+          : > "$hook_output"
+
+          write_hook() {
+            local path="$1"
+            local marker="$2"
+            cat > "$path" <<SH
+          #!/bin/sh
+          printf '%s\n' '$marker' >> /tmp/openclaw-ephemeral-hook-order
+          SH
+            chmod 0755 "$path"
+          }
+
+          # Create the pre-config hooks out of order to verify lexical execution.
+          write_hook "$hook_root/pre-config.d/20-second.sh" pre-config-20
+          write_hook "$hook_root/pre-config.d/10-first.sh" pre-config-10
+          write_hook "$hook_root/post-config.d/10-post.sh" post-config-10
+          write_hook "$hook_root/pre-gateway.d/10-gateway.sh" pre-gateway-10
+
+          docker run --rm \
+            -e OPENCLAW_BIN=/bin/true \
+            -v "$hook_root:/usr/local/share/openclaw-ephemeral/runtime.d:ro" \
+            -v "$hook_output:/tmp/openclaw-ephemeral-hook-order" \
+            "$image"
+          printf '%s\n' \
+            pre-config-10 \
+            pre-config-20 \
+            post-config-10 \
+            pre-gateway-10 \
+            | diff -u - "$hook_output"
+
           test "$(docker image inspect "$image" --format '{{.Config.User}}')" = root
           docker buildx imagetools inspect "$image" >/dev/null
