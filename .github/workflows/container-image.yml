@@ -108,16 +108,25 @@ jobs:
           cat > "$smoke_script" <<'SH'
           set -euo pipefail
           /usr/local/bin/openclaw-ephemeral.py configure
-          jq -e \
-            '.agents.defaults.models["dummy/dummy"] == {} and
-             .agents.defaults.models["dummy/note"] == {} and
-             .agents.defaults.model.primary == "dummy/note" and
-             .agents.defaults.sandbox.mode == "off" and
-             .plugins.entries.note.enabled == true and
-             .plugins.entries.note.hooks.allowConversationAccess == true and
-             .tools.profile == "full" and
-             .tools.exec.mode == "full"' \
-            /root/.openclaw/openclaw.json >/dev/null
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(
+              Path("/root/.openclaw/openclaw.json").read_text(encoding="utf-8")
+          )
+          assert config["agents"]["defaults"]["models"]["dummy/dummy"] == {}
+          assert config["agents"]["defaults"]["models"]["dummy/note"] == {}
+          assert config["agents"]["defaults"]["model"]["primary"] == "dummy/note"
+          assert config["agents"]["defaults"]["sandbox"]["mode"] == "off"
+          assert config["plugins"]["entries"]["note"]["enabled"] is True
+          assert (
+              config["plugins"]["entries"]["note"]["hooks"]["allowConversationAccess"]
+              is True
+          )
+          assert config["tools"]["profile"] == "full"
+          assert config["tools"]["exec"]["mode"] == "full"
+          PY
           test -s /root/.openclaw/exec-approvals.json
           test -f /root/.openclaw/extensions/note/openclaw.plugin.json
           SH
