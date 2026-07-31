@@ -16,6 +16,11 @@ on:
         required: true
         type: boolean
         default: true
+      cascade:
+        description: "Trigger the safrano9999-openclaw image after publishing"
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: openclaw-ephemeral-${{ github.ref }}
@@ -89,6 +94,20 @@ jobs:
           no-cache: true
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+
+      - name: Trigger safrano9999-openclaw image
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.cascade }}
+        env:
+          GH_TOKEN: ${{ secrets.CONTAINER_ACTIONS_TOKEN }}
+          PUSH_LATEST: ${{ inputs.push_latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?Missing required secret CONTAINER_ACTIONS_TOKEN}"
+          gh workflow run safrano9999-openclaw-image.yml \
+            --repo safrano9999/CONTAINER \
+            --ref main \
+            -f "push_latest=${PUSH_LATEST}"
 
       - name: Reclaim container build space
         run: .github/scripts/prune-container-build-space.sh
