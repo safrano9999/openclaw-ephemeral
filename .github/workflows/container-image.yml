@@ -34,7 +34,7 @@ on:
       deterministic_sha256:
         description: "SHA256 of the deterministic release asset"
         required: true
-        default: "8d13b120b2e8f7a4876ea4b3f4d38148466b025f56c511a9ea209a69ab87c2a9"
+        default: "c81e4482151ad1be347f630d5ab779e1fa9f6c05a34bb6f026282dd8427db5c8"
         type: string
 
 concurrency:
@@ -89,7 +89,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.deterministic_release_tag || '2026.7.1-deterministic.1' }}
           RELEASE_ASSET: ${{ inputs.deterministic_asset || 'openclaw-2026.7.1-deterministic.tar.gz' }}
-          RELEASE_SHA256: ${{ inputs.deterministic_sha256 || '8d13b120b2e8f7a4876ea4b3f4d38148466b025f56c511a9ea209a69ab87c2a9' }}
+          RELEASE_SHA256: ${{ inputs.deterministic_sha256 || 'c81e4482151ad1be347f630d5ab779e1fa9f6c05a34bb6f026282dd8427db5c8' }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^2026[.]7[.]1-deterministic[.][0-9]+$ ]]
