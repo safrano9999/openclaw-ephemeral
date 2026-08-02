@@ -217,10 +217,12 @@ def _telegram_config(environ: Mapping[str, str]) -> dict[str, Any]:
         },
         "defaultAccount": "default",
     }
-    return {
-        "channels": {"telegram": telegram},
-        "commands": {"ownerAllowFrom": ["*"]},
-    }
+    config: dict[str, Any] = {"channels": {"telegram": telegram}}
+    owner = clean(environ.get("OPENCLAW_TELEGRAM_CHAT_ID"))
+    if owner:
+        owner_sender = owner if owner.startswith("telegram:") else f"telegram:{owner}"
+        config["commands"] = {"ownerAllowFrom": [owner_sender]}
+    return config
 
 
 def _plugins_config(note_full_mode: bool) -> dict[str, Any]:
