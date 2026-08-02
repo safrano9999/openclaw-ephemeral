@@ -21,6 +21,21 @@ on:
         required: true
         type: boolean
         default: false
+      deterministic_release_tag:
+        description: "Immutable release tag from safrano9999/openclaw-deterministic"
+        required: true
+        default: "2026.7.1-deterministic.1"
+        type: string
+      deterministic_asset:
+        description: "Release tar.gz containing the patched dist directory"
+        required: true
+        default: "openclaw-2026.7.1-deterministic.tar.gz"
+        type: string
+      deterministic_sha256:
+        description: "SHA256 of the deterministic release asset"
+        required: true
+        default: "8d13b120b2e8f7a4876ea4b3f4d38148466b025f56c511a9ea209a69ab87c2a9"
+        type: string
 
 concurrency:
   group: openclaw-ephemeral-${{ github.ref }}
@@ -68,6 +83,31 @@ jobs:
       - name: Test runtime configuration
         run: python3 -m unittest discover -s tests -v
 
+      - name: Validate deterministic release asset
+        id: deterministic
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.deterministic_release_tag || '2026.7.1-deterministic.1' }}
+          RELEASE_ASSET: ${{ inputs.deterministic_asset || 'openclaw-2026.7.1-deterministic.tar.gz' }}
+          RELEASE_SHA256: ${{ inputs.deterministic_sha256 || '8d13b120b2e8f7a4876ea4b3f4d38148466b025f56c511a9ea209a69ab87c2a9' }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^2026[.]7[.]1-deterministic[.][0-9]+$ ]]
+          [[ "$RELEASE_ASSET" == openclaw-2026.7.1-deterministic.tar.gz ]]
+          [[ "$RELEASE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]
+          asset_path="${RUNNER_TEMP}/${RELEASE_ASSET}"
+          curl -fsSL --retry 3 \
+            "https://github.com/safrano9999/openclaw-deterministic/releases/download/${RELEASE_TAG}/${RELEASE_ASSET}" \
+            -o "$asset_path"
+          printf '%s  %s\n' "$RELEASE_SHA256" "$asset_path" | sha256sum -c --strict -
+          tar -tzf "$asset_path" > "${RUNNER_TEMP}/deterministic-asset-files.txt"
+          grep -Eq '^(./)?dist/' "${RUNNER_TEMP}/deterministic-asset-files.txt"
+          {
+            printf 'release_tag=%s\n' "$RELEASE_TAG"
+            printf 'release_asset=%s\n' "$RELEASE_ASSET"
+            printf 'release_sha256=%s\n' "${RELEASE_SHA256,,}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -86,9 +126,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Containerfile
+          file: ./container/Containerfile
           build-args: |
             OPENCLAW_VERSION=2026.7.1
+            OPENCLAW_DETERMINISTIC_TAG=${{ steps.deterministic.outputs.release_tag }}
+            OPENCLAW_DETERMINISTIC_ASSET=${{ steps.deterministic.outputs.release_asset }}
+            OPENCLAW_DETERMINISTIC_SHA256=${{ steps.deterministic.outputs.release_sha256 }}
           platforms: linux/amd64
           pull: true
           no-cache: true

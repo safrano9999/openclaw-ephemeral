@@ -1,36 +1,99 @@
 # openclaw-ephemeral
 
+Environment-driven Python runtime for OpenClaw. It rebuilds the complete
+`openclaw.json` from the current process environment without reading or merging
+an older JSON file.
+
+The repository is centered on the executable `openclaw-ephemeral.py`, the
+`openclaw_ephemeral` package, and their tests. Container packaging is optional
+and isolated below `container/`.
+
+## Python runtime
+
+```text
+openclaw-ephemeral.py configure
+openclaw-ephemeral.py run
+openclaw-ephemeral.py restart
+```
+
+- `configure` writes a fresh configuration and applies the trusted runtime
+  policy.
+- `run` configures OpenClaw, executes the lifecycle hooks, and starts the
+  gateway.
+- `restart` configures OpenClaw and requests a gateway restart.
+
+Only `run` scans runtime hooks:
+
+```text
+/usr/local/share/openclaw-ephemeral/runtime.d/pre-config.d   before configure
+/usr/local/share/openclaw-ephemeral/runtime.d/post-config.d  after configure and trusted policy
+/usr/local/share/openclaw-ephemeral/runtime.d/pre-gateway.d  immediately before gateway exec
+```
+
+Entries run in lexical filename order. Names must match
+`[A-Za-z0-9][A-Za-z0-9._-]*`. Symlinks and non-regular entries abort startup,
+non-executable regular files are ignored, and an unsuccessful hook prevents all
+later phases and gateway execution.
+
+## Environment contract
+
+Recognized model variables include:
+
+```text
+OPENCLAW_MODEL
+OPENCLAW_OPENAI_V1_DEFAULT_LLM
+OPENAI_V1_PROVIDER
+OPENAI_V1_URL
+OPENAI_V1_PORT
+OPENAI_V1_KEY
+OPENAI_V1_API_KEY_ALIAS
+OPENAI_V1_STREAM
+```
+
+Numbered OpenAI-v1 groups use `_2`, `_3`, and subsequent suffixes. Native
+OpenClaw providers continue to use their established `*_API_KEY` variables.
+Gateway and Telegram configuration use `OPENCLAW_GATEWAY_*` and
+`OPENCLAW_TELEGRAMTOKEN`.
+
+Secret values are represented through environment references in the generated
+configuration. The runtime does not serialize resolved credentials into its
+status output.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+## Optional container image
+
 [![Docker Hub](https://img.shields.io/badge/Docker_Hub-openclaw--ephemeral-0ea5e9)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
 [![Image tags](https://img.shields.io/badge/image-tags-2563eb)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags)
 [![Deterministic source](https://img.shields.io/badge/source-openclaw--deterministic-111827)](https://github.com/safrano9999/openclaw-deterministic)
 [![Release overview](https://img.shields.io/badge/release-overview-7c3aed)](RELEASE.md)
 
-[`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
-is the public common OpenClaw image layer used before Safrano plugins are
-added.
+The image definition and its build/runtime helpers live in `container/`. The
+repository root remains the build context so the Containerfile can copy the
+unchanged Python package and launcher.
 
-The image combines only these established components:
+The published image is
+[`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral).
+It combines these pinned components:
 
 - `ghcr.io/openclaw/openclaw:2026.7.1`
 - [`openclaw-deterministic` release `2026.7.1-deterministic.1`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.1)
 - [NOTE release ZIP `2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36)
-- the environment-driven `openclaw-ephemeral.py` runtime
+- this repository's environment-driven Python runtime
 
-Patch and NOTE archives are downloaded from their pinned releases during the
-image build and verified by SHA-256. They are not vendored in this repository.
-See the [release overview](RELEASE.md) for the three public components, their
-responsibilities, and the immutable version pins used by the image.
+The external archives are downloaded from their pinned releases and verified
+by SHA-256. They are not vendored here. The image defaults to `dummy/note`;
+`dummy/dummy`, native providers, and OpenAI-v1 compatible providers remain
+available.
 
-At every start the runtime creates `/root/.openclaw/openclaw.json` from
-injected environment variables without reading or merging an older JSON file.
-The established trusted-container policy and exec approval file are applied
-before the gateway starts.
+The container runs as `root`, matching the existing Safrano and Fedora
+OpenClaw images.
 
-The default model is `dummy/note`. `dummy/dummy` remains available, and normal
-native or OpenAI-v1 compatible providers remain available when their existing
-environment variables are injected.
-
-## Historical visible proof
+## Historical image proof
 
 The preserved recording compares an unavailable normal model with the
 `dummy/dummy` route. Click either screenshot to open the corresponding MP4.
@@ -59,80 +122,21 @@ The preserved recording compares an unavailable normal model with the
 </table>
 
 The recordings predate the `2026.7.1` port and demonstrate the routing concept,
-not the byte-exact current reply text. The image workflow separately
-smoke-tests the pinned `2026.7.1` artifact.
-
-With `dummy/note`, NOTE claims an ordinary non-command message, stores it
-without an LLM request, acknowledges the save, and returns it through
+not byte-exact current reply text. With `dummy/note`, NOTE can claim and store
+an ordinary non-command message without an LLM request and return it through
 `/note show`.
 
 ![NOTE full mode in Telegram](https://raw.githubusercontent.com/safrano9999/NOTE/2026.7.36/docs/full-mode.jpg)
 
-This NOTE screenshot illustrates the workflow on OpenClaw `2026.6.11`; it is
-not the image's `2026.7.1` build proof.
+The NOTE screenshot was captured on OpenClaw `2026.6.11` and illustrates the
+workflow rather than the current pinned build.
 
-## Runtime
-
-```text
-openclaw-ephemeral.py configure
-openclaw-ephemeral.py run
-openclaw-ephemeral.py restart
-```
-
-Only `run` executes runtime hooks. It scans these directories at the named
-lifecycle points:
-
-```text
-/usr/local/share/openclaw-ephemeral/runtime.d/pre-config.d   before configure
-/usr/local/share/openclaw-ephemeral/runtime.d/post-config.d  after configure and trusted policy
-/usr/local/share/openclaw-ephemeral/runtime.d/pre-gateway.d  immediately before gateway exec
-```
-
-Missing directories are empty phases. Entries are processed in lexical filename
-order; names must match `[A-Za-z0-9][A-Za-z0-9._-]*`. Symlinks and non-regular
-entries abort startup, regular files without an execute bit are ignored, and
-executable files run directly with the runtime environment and no implicit
-shell. A nonzero hook stops all later phases and prevents gateway exec.
-`configure` and `restart` do not scan hook directories.
-
-Recognized model variables include:
-
-```text
-OPENCLAW_MODEL
-OPENCLAW_OPENAI_V1_DEFAULT_LLM
-OPENAI_V1_PROVIDER
-OPENAI_V1_URL
-OPENAI_V1_PORT
-OPENAI_V1_KEY
-OPENAI_V1_API_KEY_ALIAS
-OPENAI_V1_STREAM
-```
-
-Numbered OpenAI-v1 groups use the existing `_2`, `_3`, and subsequent suffix
-form. Native OpenClaw providers continue to use their existing `*_API_KEY`
-variables. Gateway and Telegram configuration use the existing
-`OPENCLAW_GATEWAY_*` and `OPENCLAW_TELEGRAMTOKEN` variables.
-
-The container runs as `root`, matching the existing Safrano and Fedora OpenClaw
-images.
-
-## Public image
-
-Pull the ready-to-run image with Docker:
+## Pull the optional image
 
 ```bash
 docker pull docker.io/safrano9999/openclaw-ephemeral:latest
 ```
 
-or Podman:
-
 ```bash
 podman pull docker.io/safrano9999/openclaw-ephemeral:latest
 ```
-
-Published tags are listed on
-[Docker Hub](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags).
-The deterministic patch is maintained in
-[`openclaw-deterministic`](https://github.com/safrano9999/openclaw-deterministic),
-and `dummy/note` uses the separate
-[NOTE plugin](https://github.com/safrano9999/NOTE).
