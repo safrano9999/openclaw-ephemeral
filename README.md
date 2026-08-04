@@ -67,8 +67,8 @@ python3 -m unittest discover -s tests -v
 
 ## Optional container image
 
-[![Docker Hub](https://img.shields.io/badge/Docker_Hub-openclaw--ephemeral-0ea5e9)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral)
-[![Image tags](https://img.shields.io/badge/image-tags-2563eb)](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags)
+[![GHCR](https://img.shields.io/badge/GHCR-openclaw--ephemeral-0ea5e9)](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral)
+[![Image tags](https://img.shields.io/badge/image-tags-2563eb)](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral)
 [![Deterministic source](https://img.shields.io/badge/source-openclaw--deterministic-111827)](https://github.com/safrano9999/openclaw-deterministic)
 [![Release overview](https://img.shields.io/badge/release-overview-7c3aed)](RELEASE.md)
 
@@ -77,7 +77,7 @@ repository root remains the build context so the Containerfile can copy the
 unchanged Python package and launcher.
 
 The published image is
-[`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral).
+[`ghcr.io/safrano9999/openclaw-ephemeral`](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral).
 It combines these pinned components:
 
 - `ghcr.io/openclaw/openclaw:2026.7.1`
@@ -134,9 +134,9 @@ workflow rather than the current pinned build.
 ## Pull the optional image
 
 ```bash
-docker pull docker.io/safrano9999/openclaw-ephemeral:latest
+docker pull ghcr.io/safrano9999/openclaw-ephemeral:latest
 ```
 
 ```bash
-podman pull docker.io/safrano9999/openclaw-ephemeral:latest
+podman pull ghcr.io/safrano9999/openclaw-ephemeral:latest
 ```

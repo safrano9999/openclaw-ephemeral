@@ -11,7 +11,7 @@
 | OpenClaw version | `2026.7.1` |
 | Deterministic patch | [`2026.7.1-deterministic.1`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.1) |
 | NOTE plugin | [`2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36) |
-| Published image | [`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral) |
+| Published image | [`ghcr.io/safrano9999/openclaw-ephemeral`](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral) |
 
 The Git tag identifies an `openclaw-ephemeral` image release. It does **not**
 float the embedded OpenClaw runtime: the base image and the
@@ -86,12 +86,12 @@ workflow. At every start, the runtime creates a fresh OpenClaw configuration
 from the injected environment rather than merging a previous configuration.
 
 The resulting image is published as
-[`docker.io/safrano9999/openclaw-ephemeral`](https://hub.docker.com/r/safrano9999/openclaw-ephemeral),
-with all public tags listed on
-[Docker Hub](https://hub.docker.com/r/safrano9999/openclaw-ephemeral/tags).
+[`ghcr.io/safrano9999/openclaw-ephemeral`](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral),
+with all public tags listed in
+[GitHub Packages](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral).
 
 ```bash
-docker pull docker.io/safrano9999/openclaw-ephemeral:latest
+docker pull ghcr.io/safrano9999/openclaw-ephemeral:latest
 ```
 
 ## Release automation

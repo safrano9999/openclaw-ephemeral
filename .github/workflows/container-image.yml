@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Docker image tag to publish"
+        description: "Container image tag to publish"
         required: false
         default: "2026.7.1"
       push_latest:
@@ -40,12 +40,13 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build-test-publish:
     runs-on: ubuntu-latest
     env:
-      IMAGE_NAME: docker.io/safrano9999/openclaw-ephemeral
+      IMAGE_NAME: ghcr.io/safrano9999/openclaw-ephemeral
       DOCKER_BUILD_RECORD_UPLOAD: "false"
     steps:
       - name: Checkout
@@ -112,12 +113,12 @@ jobs:
           keep-state: false
           cleanup: true
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish
         uses: docker/build-push-action@v6
@@ -152,16 +153,31 @@ jobs:
       - name: Reclaim container build space
         run: .github/scripts/prune-container-build-space.sh
 
-      - name: Verify public Docker Hub repository
+      - name: Verify public GHCR package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_TAG: ${{ steps.tags.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL \
-            https://hub.docker.com/v2/namespaces/safrano9999/repositories/openclaw-ephemeral \
-            | jq -e \
-              '.name == "openclaw-ephemeral" and
-               .namespace == "safrano9999" and
-               .is_private == false' >/dev/null
+          docker buildx imagetools inspect "${IMAGE_NAME}:${IMAGE_TAG}" >/dev/null
+          package_url="https://api.github.com/user/packages/container/openclaw-ephemeral"
+          verified=false
+          for _ in {1..20}; do
+            if curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$package_url" \
+              | jq -e \
+                '.name == "openclaw-ephemeral" and .visibility == "public"' \
+                >/dev/null; then
+              verified=true
+              break
+            fi
+            sleep 3
+          done
+          [ "$verified" = true ]
 
       - name: Test published image
         env:
