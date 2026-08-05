@@ -84,6 +84,8 @@ model.
 owns the Python runtime scripts, container definition, tests, and release
 workflow. At every start, the runtime creates a fresh OpenClaw configuration
 from the injected environment rather than merging a previous configuration.
+Optional repeatable `MCP_SERVER_*` groups add global streamable-HTTP MCP
+servers with unrestricted tools and environment-referenced bearer tokens.
 
 The resulting image is published as
 [`ghcr.io/safrano9999/openclaw-ephemeral`](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral),

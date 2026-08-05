@@ -14,6 +14,7 @@ from openclaw_ephemeral.configuration import (
     NOTE_MODEL,
     build_config,
     configure,
+    discover_mcp_servers,
 )
 from openclaw_ephemeral.providers import OpenAIV1Provider
 
@@ -38,6 +39,94 @@ def provider(
 
 
 class ConfigBuilderTests(unittest.TestCase):
+    def test_optional_repeated_mcp_servers_are_global_and_unrestricted(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = build_config(
+                {
+                    "HOME": raw,
+                    "MCP_SERVER_NAME": "",
+                    "MCP_SERVER_URL": (
+                        "http://kachelmann-mcp.dns.podman:11041/mcp"
+                    ),
+                    "MCP_SERVER_BEARER": "first-secret",
+                    "MCP_SERVER_NAME_02": "paperless-mcp",
+                    "MCP_SERVER_URL_02": "http://paperless-mcp:5000/mcp",
+                    "MCP_SERVER_BEARER_02": "",
+                    "MCP_SERVER_NAME_03": "ignored-without-url",
+                },
+                destination=Path(raw) / "openclaw.json",
+            )
+
+        servers = config["mcp"]["servers"]
+        self.assertEqual(
+            list(servers),
+            ["kachelmann-mcp", "paperless-mcp"],
+        )
+        kachelmann = servers["kachelmann-mcp"]
+        self.assertEqual(
+            kachelmann["headers"]["Authorization"],
+            "Bearer ${MCP_SERVER_BEARER}",
+        )
+        self.assertEqual(kachelmann["transport"], "streamable-http")
+        self.assertTrue(kachelmann["supportsParallelToolCalls"])
+        self.assertEqual(
+            kachelmann["codex"]["defaultToolsApprovalMode"],
+            "approve",
+        )
+        self.assertNotIn("toolFilter", kachelmann)
+        self.assertNotIn("headers", servers["paperless-mcp"])
+        self.assertNotIn("first-secret", json.dumps(config))
+
+    def test_empty_optional_mcp_groups_do_not_create_mcp_config(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = build_config(
+                {
+                    "HOME": raw,
+                    "MCP_SERVER_NAME": "ignored-without-url",
+                    "MCP_SERVER_BEARER": "unused-secret",
+                },
+                destination=Path(raw) / "openclaw.json",
+            )
+
+        self.assertNotIn("mcp", config)
+
+    def test_invalid_mcp_groups_are_rejected(self) -> None:
+        cases = (
+            (
+                {"MCP_SERVER_URL": "ftp://invalid.example/mcp"},
+                "http(s) URL",
+            ),
+            (
+                {"MCP_SERVER_URL": "http://user:pass@invalid.example/mcp"},
+                "must not contain credentials",
+            ),
+            (
+                {
+                    "MCP_SERVER_NAME": "duplicate",
+                    "MCP_SERVER_URL": "http://one.example/mcp",
+                    "MCP_SERVER_NAME_02": "DUPLICATE",
+                    "MCP_SERVER_URL_02": "http://two.example/mcp",
+                },
+                "duplicate MCP server name",
+            ),
+            (
+                {
+                    "MCP_SERVER_URL": "http://one.example/mcp",
+                    "MCP_SERVER_BEARER": "Bearer already-prefixed",
+                },
+                "without 'Bearer '",
+            ),
+            (
+                {"MCP_SERVER_URL_01": "http://one.example/mcp"},
+                "between 02 and 50",
+            ),
+        )
+        for environ, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(ValueError) as caught:
+                    discover_mcp_servers(environ)
+                self.assertIn(message, str(caught.exception))
+
     def test_minimal_config_has_both_deterministic_routes_and_main_agent(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -328,6 +417,33 @@ class ConfigBuilderTests(unittest.TestCase):
 
 
 class CompleteConfigureTests(unittest.TestCase):
+    def test_configure_reports_mcp_count_without_serializing_bearer(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            destination = Path(raw) / "openclaw.json"
+            with (
+                patch(
+                    "openclaw_ephemeral.configuration.discover_native_models",
+                    return_value=((), ()),
+                ),
+                patch(
+                    "openclaw_ephemeral.configuration.discover_openai_v1_providers",
+                    return_value=((), ()),
+                ),
+            ):
+                result = configure(
+                    {
+                        "HOME": raw,
+                        "OPENCLAW_CONFIG": str(destination),
+                        "MCP_SERVER_URL": "https://mcp.example/mcp",
+                        "MCP_SERVER_BEARER": "mcp-secret",
+                    }
+                )
+
+            self.assertEqual(result.mcp_server_count, 1)
+            serialized = destination.read_text(encoding="utf-8")
+            self.assertIn("Bearer ${MCP_SERVER_BEARER}", serialized)
+            self.assertNotIn("mcp-secret", serialized)
+
     def test_existing_openai_oauth_database_enables_openai_models(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             destination = Path(raw) / "state" / "openclaw.json"

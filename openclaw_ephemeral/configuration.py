@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 from .environment import (
+    ConfigurationError,
     agent_dir_path,
     boolean,
     clean,
@@ -33,6 +36,10 @@ from .providers import (
 
 DUMMY_MODEL = "dummy/dummy"
 NOTE_MODEL = "dummy/note"
+MAX_MCP_SERVERS = 50
+MCP_FIELDS = ("NAME", "URL", "BEARER")
+MCP_SUFFIX = re.compile(r"^MCP_SERVER_(?:NAME|URL|BEARER)_(\d+)$")
+SAFE_MCP_SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -44,9 +51,135 @@ class ConfigurationResult:
     native_model_count: int
     openai_v1_provider_count: int
     openai_v1_model_count: int
+    mcp_server_count: int
     telegram_configured: bool
     note_full_mode: bool
     warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class McpServer:
+    """One normalized HTTP MCP server without a resolved credential."""
+
+    index: int
+    name: str
+    url: str
+    bearer_env: str | None
+
+    def openclaw_config(self) -> dict[str, Any]:
+        config: dict[str, Any] = {
+            "enabled": True,
+            "url": self.url,
+            "transport": "streamable-http",
+            "supportsParallelToolCalls": True,
+            "codex": {"defaultToolsApprovalMode": "approve"},
+        }
+        if self.bearer_env is not None:
+            config["headers"] = {
+                "Authorization": f"Bearer ${{{self.bearer_env}}}"
+            }
+        return config
+
+
+def _mcp_field_env_name(
+    environ: Mapping[str, str],
+    field: str,
+    index: int,
+) -> str:
+    base = f"MCP_SERVER_{field}"
+    if index == 1:
+        return base
+    padded = f"{base}_{index:02d}"
+    unpadded = f"{base}_{index}"
+    for candidate in (padded, unpadded):
+        if candidate in environ:
+            return candidate
+    return padded
+
+
+def _configured_mcp_indexes(environ: Mapping[str, str]) -> tuple[int, ...]:
+    indexes = {1}
+    for key in environ:
+        match = MCP_SUFFIX.fullmatch(key)
+        if match is None:
+            continue
+        suffix = match.group(1)
+        index = int(suffix, 10)
+        if not 2 <= index <= MAX_MCP_SERVERS:
+            raise ConfigurationError(
+                f"{key} index must be between 02 and {MAX_MCP_SERVERS:02d}"
+            )
+        if suffix not in {str(index), f"{index:02d}"}:
+            raise ConfigurationError(f"{key} has an unsupported numeric suffix")
+        indexes.add(index)
+    return tuple(sorted(indexes))
+
+
+def _mcp_server_url(raw_url: str, index: int) -> str:
+    url = clean(raw_url)
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ConfigurationError(
+            f"MCP_SERVER_URL for server {index:02d} must be an http(s) URL"
+        )
+    if parsed.username is not None or parsed.password is not None:
+        raise ConfigurationError(
+            f"MCP_SERVER_URL for server {index:02d} must not contain credentials"
+        )
+    return url
+
+
+def _mcp_server_name(raw_name: str, url: str, index: int) -> str:
+    name = clean(raw_name)
+    if not name:
+        name = clean(urlsplit(url).hostname)
+        if name.endswith(".dns.podman"):
+            name = name[: -len(".dns.podman")]
+        name = name or f"mcp-{index:02d}"
+    if SAFE_MCP_SERVER_NAME.fullmatch(name) is None:
+        raise ConfigurationError(
+            f"MCP server {index:02d} name must match "
+            f"{SAFE_MCP_SERVER_NAME.pattern}"
+        )
+    return name
+
+
+def discover_mcp_servers(
+    environ: Mapping[str, str],
+) -> tuple[McpServer, ...]:
+    """Read the optional suffixless, then suffix02-style MCP groups."""
+
+    servers: list[McpServer] = []
+    seen_names: set[str] = set()
+    for index in _configured_mcp_indexes(environ):
+        fields = {
+            field: _mcp_field_env_name(environ, field, index)
+            for field in MCP_FIELDS
+        }
+        raw_url = clean(environ.get(fields["URL"]))
+        if not raw_url:
+            continue
+        url = _mcp_server_url(raw_url, index)
+        name = _mcp_server_name(environ.get(fields["NAME"], ""), url, index)
+        folded_name = name.casefold()
+        if folded_name in seen_names:
+            raise ConfigurationError(f"duplicate MCP server name: {name}")
+        seen_names.add(folded_name)
+
+        bearer = clean(environ.get(fields["BEARER"]))
+        if bearer.lower().startswith("bearer "):
+            raise ConfigurationError(
+                f"{fields['BEARER']} must contain only the token, without 'Bearer '"
+            )
+        servers.append(
+            McpServer(
+                index=index,
+                name=name,
+                url=url,
+                bearer_env=fields["BEARER"] if bearer else None,
+            )
+        )
+    return tuple(servers)
 
 
 def _origin(host: str, port: int) -> str:
@@ -312,6 +445,7 @@ def build_config(
     destination: Path,
     native_models: Sequence[str] = (),
     openai_v1_providers: Sequence[OpenAIV1Provider] = (),
+    mcp_servers: Sequence[McpServer] | None = None,
     tailscale_runner: Callable[..., Any] = subprocess.run,
 ) -> tuple[dict[str, Any], str, bool]:
     """Build a complete config without opening the destination file."""
@@ -352,6 +486,18 @@ def build_config(
         "plugins": _plugins_config(note_full_mode),
         "tools": _trusted_container_tools(),
     }
+    configured_mcp_servers = (
+        tuple(mcp_servers)
+        if mcp_servers is not None
+        else discover_mcp_servers(environ)
+    )
+    if configured_mcp_servers:
+        config["mcp"] = {
+            "servers": {
+                server.name: server.openclaw_config()
+                for server in configured_mcp_servers
+            }
+        }
     custom_models = _models_config(providers)
     if custom_models:
         config["models"] = custom_models
@@ -380,11 +526,13 @@ def configure(
         injected,
         opener=opener,
     )
+    mcp_servers = discover_mcp_servers(injected)
     config, primary_model, note_full_mode = build_config(
         injected,
         destination=destination,
         native_models=native_models,
         openai_v1_providers=providers,
+        mcp_servers=mcp_servers,
         tailscale_runner=runner,
     )
 
@@ -395,6 +543,7 @@ def configure(
         and (
             name.endswith("_API_KEY")
             or name.startswith("OPENAI_V1_KEY")
+            or name.startswith("MCP_SERVER_BEARER")
             or name in {"OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_TELEGRAMTOKEN"}
         )
     }
@@ -408,6 +557,7 @@ def configure(
         native_model_count=len(native_models),
         openai_v1_provider_count=len(providers),
         openai_v1_model_count=sum(len(provider.models) for provider in providers),
+        mcp_server_count=len(mcp_servers),
         telegram_configured=bool(clean(injected.get("OPENCLAW_TELEGRAMTOKEN"))),
         note_full_mode=note_full_mode,
         warnings=(*native_warnings, *openai_warnings),

@@ -209,12 +209,28 @@ jobs:
           )
           assert config["tools"]["profile"] == "full"
           assert config["tools"]["exec"]["mode"] == "full"
+          servers = config["mcp"]["servers"]
+          assert set(servers) == {"kachelmann-mcp", "paperless-mcp"}
+          assert servers["kachelmann-mcp"]["headers"]["Authorization"] == (
+              "Bearer ${MCP_SERVER_BEARER}"
+          )
+          assert servers["kachelmann-mcp"]["supportsParallelToolCalls"] is True
+          assert servers["kachelmann-mcp"]["codex"] == {
+              "defaultToolsApprovalMode": "approve"
+          }
+          assert "toolFilter" not in servers["kachelmann-mcp"]
+          assert "headers" not in servers["paperless-mcp"]
+          assert "workflow-mcp-secret" not in json.dumps(config)
           PY
           test -s /root/.openclaw/exec-approvals.json
           test -f /root/.openclaw/extensions/note/openclaw.plugin.json
           SH
           chmod 0755 "$smoke_script"
           docker run --rm \
+            -e MCP_SERVER_URL=http://kachelmann-mcp:11041/mcp \
+            -e MCP_SERVER_BEARER=workflow-mcp-secret \
+            -e MCP_SERVER_NAME_02=paperless-mcp \
+            -e MCP_SERVER_URL_02=http://paperless-mcp:5000/mcp \
             -v "$smoke_script:/tmp/openclaw-ephemeral-smoke.sh:ro" \
             --entrypoint bash \
             "$image" /tmp/openclaw-ephemeral-smoke.sh

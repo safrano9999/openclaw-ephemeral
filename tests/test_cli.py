@@ -24,6 +24,7 @@ def result(path: Path) -> ConfigurationResult:
         native_model_count=2,
         openai_v1_provider_count=1,
         openai_v1_model_count=3,
+        mcp_server_count=0,
         telegram_configured=False,
         note_full_mode=False,
         warnings=(),

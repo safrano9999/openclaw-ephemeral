@@ -59,6 +59,10 @@ def _report(result: ConfigurationResult, stream: Any) -> None:
         f"{result.openai_v1_provider_count} OpenAI-v1 provider(s)",
         file=stream,
     )
+    print(
+        f"OpenClaw MCP servers configured: {result.mcp_server_count}",
+        file=stream,
+    )
     if result.telegram_configured:
         print("OpenClaw Telegram configured from an environment reference", file=stream)
     if result.note_full_mode:

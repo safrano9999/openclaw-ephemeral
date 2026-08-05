@@ -55,6 +55,25 @@ OpenClaw providers continue to use their established `*_API_KEY` variables.
 Gateway and Telegram configuration use `OPENCLAW_GATEWAY_*` and
 `OPENCLAW_TELEGRAMTOKEN`.
 
+Optional global HTTP MCP servers use repeatable groups:
+
+```text
+MCP_SERVER_NAME=
+MCP_SERVER_URL=
+MCP_SERVER_BEARER=
+
+MCP_SERVER_NAME_02=
+MCP_SERVER_URL_02=
+MCP_SERVER_BEARER_02=
+```
+
+The first group has no `_01` suffix; later groups use `_02`, `_03`, and so on.
+Only the URL activates a group. The name and bearer are optional, with a
+missing name derived from the URL hostname. Servers are available globally
+without tool filters, advertise parallel tool calls, and use Codex approval
+mode `approve`. Bearers are stored as environment placeholders such as
+`Bearer ${MCP_SERVER_BEARER_02}`, never as resolved tokens.
+
 Secret values are represented through environment references in the generated
 configuration. The runtime does not serialize resolved credentials into its
 status output.
