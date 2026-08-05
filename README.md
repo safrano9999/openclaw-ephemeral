@@ -48,10 +48,17 @@ OPENAI_V1_PORT
 OPENAI_V1_KEY
 OPENAI_V1_API_KEY_ALIAS
 OPENAI_V1_STREAM
+OPENAI_V1_DISCOVERY_HEADERS
+OPENAI_V1_MODELS
 ```
 
 Numbered OpenAI-v1 groups use `_2`, `_3`, and subsequent suffixes. Native
 OpenClaw providers continue to use their established `*_API_KEY` variables.
+`OPENAI_V1_DISCOVERY_HEADERS` is an optional JSON object for endpoint-specific
+catalog headers; it cannot replace the generated bearer authorization.
+`OPENAI_V1_MODELS` accepts a JSON array or comma-separated model ids and is
+merged with discovery results, or used as a fallback when `/models` is not
+available. Neither option depends on a provider name.
 Gateway and Telegram configuration use `OPENCLAW_GATEWAY_*` and
 `OPENCLAW_TELEGRAMTOKEN`.
 

@@ -203,7 +203,7 @@ class OpenAIV1DiscoveryTests(unittest.TestCase):
             normalize_openai_v1_url("https://user:secret@example.test", "443")
 
     def test_repeated_groups_call_models_endpoint_and_keep_only_secret_refs(self) -> None:
-        requests: list[tuple[str, str, float]] = []
+        requests: list[tuple[str, str, str | None, float]] = []
         responses: list[FakeResponse] = []
 
         def opener(request: Any, *, timeout: float) -> FakeResponse:
@@ -222,6 +222,7 @@ class OpenAIV1DiscoveryTests(unittest.TestCase):
                 (
                     request.full_url,
                     request.get_header("Authorization"),
+                    request.get_header("User-agent"),
                     timeout,
                 )
             )
@@ -233,6 +234,7 @@ class OpenAIV1DiscoveryTests(unittest.TestCase):
                 "OPENAI_V1_URL": "https://one.test",
                 "OPENAI_V1_PORT": "443",
                 "OPENAI_V1_KEY": "first-secret",
+                "OPENAI_V1_DISCOVERY_HEADERS": '{"User-Agent":"catalog-client"}',
                 "OPENAI_V1_STREAM": "true",
                 "OPENAI_V1_PROVIDER_2": "LiteLLM Main",
                 "OPENAI_V1_URL_2": "http://127.0.0.1",
@@ -259,12 +261,84 @@ class OpenAIV1DiscoveryTests(unittest.TestCase):
             ],
         )
         self.assertEqual(requests[0][1], "Bearer first-secret")
+        self.assertEqual(requests[0][2], "catalog-client")
         self.assertEqual(requests[1][1], "Bearer second-secret")
+        self.assertIsNone(requests[1][2])
         self.assertTrue(all(response.closed for response in responses))
 
         serialized = json.dumps(providers[0].openclaw_config())
         self.assertNotIn("first-secret", serialized)
         self.assertIn('"id": "OPENAI_V1_KEY"', serialized)
+
+    def test_common_catalog_shapes_and_configured_models_are_merged(self) -> None:
+        payloads = iter(
+            (
+                {"models": ["model-a", {"name": "model-b"}]},
+                [{"model": "model-c"}, {"id": "model-d"}],
+                {"models": {"model-e": {}, "model-f": {}}},
+            )
+        )
+
+        def opener(_request: Any, *, timeout: float) -> FakeResponse:
+            del timeout
+            return FakeResponse(next(payloads))
+
+        providers, warnings = discover_openai_v1_providers(
+            {
+                "OPENAI_V1_URL": "https://one.test",
+                "OPENAI_V1_KEY": "one-secret",
+                "OPENAI_V1_MODELS": '["configured-extra"]',
+                "OPENAI_V1_URL_2": "https://two.test",
+                "OPENAI_V1_KEY_2": "two-secret",
+                "OPENAI_V1_URL_3": "https://three.test",
+                "OPENAI_V1_KEY_3": "three-secret",
+            },
+            opener=opener,
+        )
+
+        self.assertEqual(warnings, ())
+        self.assertEqual(
+            [provider.models for provider in providers],
+            [
+                ("configured-extra", "model-a", "model-b"),
+                ("model-c", "model-d"),
+                ("model-e", "model-f"),
+            ],
+        )
+
+    def test_configured_models_are_used_when_discovery_fails(self) -> None:
+        def opener(_request: Any, *, timeout: float) -> FakeResponse:
+            del timeout
+            raise OSError("endpoint unavailable")
+
+        providers, warnings = discover_openai_v1_providers(
+            {
+                "OPENAI_V1_URL": "https://one.test",
+                "OPENAI_V1_KEY": "secret-value",
+                "OPENAI_V1_MODELS": "model-b, model-a",
+            },
+            opener=opener,
+        )
+
+        self.assertEqual(providers[0].models, ("model-a", "model-b"))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("using 2 configured model(s)", warnings[0])
+        self.assertNotIn("secret-value", warnings[0])
+
+    def test_discovery_headers_cannot_override_bearer_or_inject_lines(self) -> None:
+        base = {
+            "OPENAI_V1_URL": "https://one.test",
+            "OPENAI_V1_KEY": "secret-value",
+        }
+        for value in (
+            '{"Authorization":"Basic replacement"}',
+            '{"User-Agent":"valid\\r\\ninjected: true"}',
+        ):
+            with self.subTest(value=value), self.assertRaises(ConfigurationError):
+                discover_openai_v1_providers(
+                    {**base, "OPENAI_V1_DISCOVERY_HEADERS": value},
+                    opener=lambda *_args, **_kwargs: FakeResponse({"data": []}),
+                )
 
     def test_quoted_env_file_values_match_existing_parser(self) -> None:
         captured: list[tuple[str, str | None]] = []

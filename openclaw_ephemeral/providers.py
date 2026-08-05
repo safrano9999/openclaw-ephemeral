@@ -23,6 +23,7 @@ from .environment import (
 
 
 MAX_DISCOVERY_RESPONSE_BYTES = 8 * 1024 * 1024
+HTTP_HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
 
 def _clean_openai_v1(value: str | None) -> str:
@@ -242,7 +243,8 @@ def discover_native_models(
 def _openai_v1_indexes(environ: Mapping[str, str]) -> list[int]:
     indexes = {1}
     pattern = re.compile(
-        r"^OPENAI_V1_(?:PROVIDER|URL|PORT|KEY|API_KEY_ALIAS|STREAM)_(\d+)$"
+        r"^OPENAI_V1_(?:PROVIDER|URL|PORT|KEY|API_KEY_ALIAS|STREAM|"
+        r"DISCOVERY_HEADERS|MODELS)_(\d+)$"
     )
     for name in environ:
         match = pattern.fullmatch(name)
@@ -289,6 +291,88 @@ def _streaming_value(environ: Mapping[str, str], index: int) -> bool:
     if raw in {"0", "false", "no", "off"}:
         return False
     raise ConfigurationError(f"{name} must be a boolean value")
+
+
+def _discovery_headers(
+    environ: Mapping[str, str],
+    index: int,
+) -> dict[str, str]:
+    """Read provider-specific discovery headers without embedding providers in code."""
+
+    name = _group_name(environ, "DISCOVERY_HEADERS", index)
+    raw = _group_value(environ, "DISCOVERY_HEADERS", index)
+    if not raw:
+        return {}
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"{name} must be a JSON object") from exc
+    if not isinstance(decoded, Mapping):
+        raise ConfigurationError(f"{name} must be a JSON object")
+
+    headers: dict[str, str] = {}
+    for raw_header, raw_value in decoded.items():
+        if not isinstance(raw_header, str) or not HTTP_HEADER_NAME.fullmatch(raw_header):
+            raise ConfigurationError(f"{name} contains an invalid HTTP header name")
+        if raw_header.lower() == "authorization":
+            raise ConfigurationError(
+                f"{name} must not override the generated Authorization header"
+            )
+        if not isinstance(raw_value, str) or "\r" in raw_value or "\n" in raw_value:
+            raise ConfigurationError(f"{name} contains an invalid HTTP header value")
+        headers[raw_header] = raw_value
+    return headers
+
+
+def _model_ids(decoded: Any) -> tuple[str, ...]:
+    """Normalize common model-catalog shapes without provider-specific branches."""
+
+    rows: Any = decoded
+    if isinstance(decoded, Mapping):
+        rows = decoded.get("data")
+        if rows is None:
+            rows = decoded.get("models")
+    if isinstance(rows, Mapping):
+        rows = list(rows.keys())
+    if not isinstance(rows, list):
+        return ()
+
+    model_ids: set[str] = set()
+    for row in rows:
+        if isinstance(row, str):
+            model_id = clean(row)
+        elif isinstance(row, Mapping):
+            model_id = ""
+            for field in ("id", "model", "name"):
+                value = row.get(field)
+                if isinstance(value, str) and clean(value):
+                    model_id = clean(value)
+                    break
+        else:
+            model_id = ""
+        if model_id:
+            model_ids.add(model_id)
+    return tuple(sorted(model_ids))
+
+
+def _configured_models(
+    environ: Mapping[str, str],
+    index: int,
+) -> tuple[str, ...]:
+    """Read an optional endpoint-independent model fallback from one env group."""
+
+    name = _group_name(environ, "MODELS", index)
+    raw = _group_value(environ, "MODELS", index)
+    if not raw:
+        return ()
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError:
+        decoded = [part.strip() for part in raw.replace("\n", ",").split(",")]
+    models = _model_ids(decoded)
+    if not models:
+        raise ConfigurationError(f"{name} must contain at least one model id")
+    return models
 
 
 def normalize_openai_v1_url(raw_url: str, raw_port: str = "") -> str:
@@ -354,22 +438,14 @@ def _read_models_response(response: Any) -> tuple[str, ...]:
     payload = response.read(MAX_DISCOVERY_RESPONSE_BYTES + 1)
     if len(payload) > MAX_DISCOVERY_RESPONSE_BYTES:
         raise ValueError("model discovery response is too large")
-    decoded = json.loads(payload.decode("utf-8"))
-    rows = decoded.get("data", []) if isinstance(decoded, Mapping) else []
-    if not isinstance(rows, list):
-        return ()
-    model_ids = {
-        clean(row.get("id"))
-        for row in rows
-        if isinstance(row, Mapping) and isinstance(row.get("id"), str)
-    }
-    return tuple(sorted(model_id for model_id in model_ids if model_id))
+    return _model_ids(json.loads(payload.decode("utf-8")))
 
 
 def _discover_openai_v1_models(
     base_url: str,
     *,
     key: str,
+    headers: Mapping[str, str],
     opener: Callable[..., Any],
     timeout: float,
 ) -> tuple[str, ...]:
@@ -378,6 +454,7 @@ def _discover_openai_v1_models(
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {key}",
+            **headers,
         },
         method="GET",
     )
@@ -417,6 +494,8 @@ def discover_openai_v1_providers(
             raise ConfigurationError(f"{key_env} must not be empty")
         configured_name = _group_value(environ, "PROVIDER", index)
         provider_id = _provider_id(configured_name, index, used_ids)
+        configured_models = _configured_models(environ, index)
+        discovery_headers = _discovery_headers(environ, index)
         base_url = normalize_openai_v1_url(
             raw_url,
             _group_value(environ, "PORT", index),
@@ -425,14 +504,22 @@ def discover_openai_v1_providers(
             models = _discover_openai_v1_models(
                 base_url,
                 key=key,
+                headers=discovery_headers,
                 opener=opener,
                 timeout=request_timeout,
             )
         except Exception:
-            models = ()
-            warnings.append(
-                f"OpenAI-v1 model discovery failed for provider {provider_id}"
+            models = configured_models
+            suffix = (
+                f"; using {len(configured_models)} configured model(s)"
+                if configured_models
+                else ""
             )
+            warnings.append(
+                f"OpenAI-v1 model discovery failed for provider {provider_id}{suffix}"
+            )
+        else:
+            models = tuple(sorted({*models, *configured_models}))
         providers.append(
             OpenAIV1Provider(
                 index=index,
