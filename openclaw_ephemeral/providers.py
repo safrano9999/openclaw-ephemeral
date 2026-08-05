@@ -478,7 +478,7 @@ def discover_openai_v1_providers(
     request_timeout = timeout or floating(
         environ,
         "OPENCLAW_DISCOVERY_TIMEOUT",
-        default=5.0,
+        default=35.0,
     )
     providers: list[OpenAIV1Provider] = []
     warnings: list[str] = []
