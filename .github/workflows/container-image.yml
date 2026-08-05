@@ -1,5 +1,6 @@
 # Source of truth: SCRIPTS/githubactions. Generated copies are overwritten.
 name: openclaw-ephemeral image
+run-name: ${{ inputs.monitor_id != '' && format('{0} [monitor:{1}:{2}]', github.workflow, inputs.monitor_id, inputs.monitor_final) || github.workflow }}
 
 on:
   workflow_dispatch:
@@ -18,6 +19,16 @@ on:
         required: true
         type: boolean
         default: false
+      monitor_id:
+        description: "Optional event-monitor correlation id"
+        required: false
+        default: ""
+        type: string
+      monitor_final:
+        description: "This run is the final monitored cascade stage"
+        required: true
+        default: true
+        type: boolean
       deterministic_release_tag:
         description: "Immutable release tag from safrano9999/openclaw-deterministic"
         required: true
@@ -148,7 +159,9 @@ jobs:
           gh workflow run safrano9999-openclaw-image.yml \
             --repo safrano9999/CONTAINER \
             --ref main \
-            -f "push_latest=${PUSH_LATEST}"
+            -f "push_latest=${PUSH_LATEST}" \
+            -f "monitor_id=${{ inputs.monitor_id }}" \
+            -f "monitor_final=true"
 
       - name: Reclaim container build space
         run: .github/scripts/prune-container-build-space.sh
