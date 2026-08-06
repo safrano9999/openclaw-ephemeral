@@ -263,7 +263,7 @@ class OpenAIV1DiscoveryTests(unittest.TestCase):
         self.assertEqual(requests[0][1], "Bearer first-secret")
         self.assertEqual(requests[0][2], "catalog-client")
         self.assertEqual(requests[1][1], "Bearer second-secret")
-        self.assertIsNone(requests[1][2])
+        self.assertEqual(requests[1][2], "openclaw-ephemeral/1.0")
         self.assertTrue(all(response.closed for response in responses))
 
         serialized = json.dumps(providers[0].openclaw_config())

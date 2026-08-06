@@ -454,6 +454,7 @@ def _discover_openai_v1_models(
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {key}",
+            "User-Agent": "openclaw-ephemeral/1.0",
             **headers,
         },
         method="GET",
