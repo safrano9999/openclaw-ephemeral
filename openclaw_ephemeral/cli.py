@@ -20,6 +20,13 @@ from .environment import (
     integer,
     openclaw_command,
 )
+from .scheduling import (
+    dispatch_repositories,
+    ephemeral_command,
+    repository_csv,
+    schedule,
+    scheduling_requested,
+)
 
 TRUSTED_POLICY_SCRIPT = "/usr/local/bin/openclaw-ephemeral-yolo"
 RUNTIME_HOOK_ROOT = Path("/usr/local/share/openclaw-ephemeral/runtime.d")
@@ -40,11 +47,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
         "mode",
-        choices=("configure", "run", "restart"),
+        choices=("configure", "run", "restart", "schedule", "dispatch"),
         help=(
-            "configure only, configure then exec the gateway, or configure then "
-            "restart the managed gateway"
+            "configure, run or restart the gateway, reconcile schedules, or "
+            "dispatch selected repository hooks"
         ),
+    )
+    parser.add_argument(
+        "--repos",
+        default="",
+        help="comma-separated repository names for dispatch mode",
     )
     return parser
 
@@ -63,6 +75,7 @@ def _report(result: ConfigurationResult, stream: Any) -> None:
         f"OpenClaw MCP servers configured: {result.mcp_server_count}",
         file=stream,
     )
+    print(f"OpenClaw plugins integrated: {result.plugin_count}", file=stream)
     if result.telegram_configured:
         print("OpenClaw Telegram configured from an environment reference", file=stream)
     if result.note_full_mode:
@@ -137,6 +150,7 @@ def main(
     *,
     environ: Mapping[str, str] | None = None,
     runner: Callable[..., Any] = subprocess.run,
+    spawner: Callable[..., Any] = subprocess.Popen,
     execvpe: Callable[..., Any] = os.execvpe,
     opener: Callable[..., Any] | None = None,
     stdout: Any = sys.stdout,
@@ -147,6 +161,47 @@ def main(
     args = _parser().parse_args(argv)
     injected = dict(os.environ if environ is None else environ)
     try:
+        if args.mode == "dispatch":
+            repositories = repository_csv(args.repos, name="--repos")
+            if opener is None:
+                dispatched = dispatch_repositories(injected, repositories)
+            else:
+                dispatched = dispatch_repositories(
+                    injected,
+                    repositories,
+                    opener=opener,
+                )
+            print(
+                "OpenClaw repository hooks dispatched: "
+                f"{', '.join(dispatched) if dispatched else 'none'}",
+                file=stdout,
+            )
+            return 0
+        if args.repos:
+            raise ConfigurationError("--repos is only valid in dispatch mode")
+        if args.mode == "schedule":
+            if opener is None:
+                scheduled = schedule(injected, runner=runner)
+            else:
+                scheduled = schedule(injected, runner=runner, opener=opener)
+            print(
+                "OpenClaw cron jobs reconciled: "
+                f"{scheduled.kept_jobs} kept, "
+                f"{scheduled.removed_jobs} removed, "
+                f"{scheduled.added_jobs} added",
+                file=stdout,
+            )
+            print(
+                "OpenClaw init repository hooks dispatched: "
+                + (
+                    ", ".join(scheduled.initialized_repositories)
+                    if scheduled.initialized_repositories
+                    else "none"
+                ),
+                file=stdout,
+            )
+            return 0
+
         if args.mode == "run":
             _run_runtime_hooks("pre-config", injected, runner)
 
@@ -189,6 +244,11 @@ def main(
             if runtime_env.get("OPENCLAW_GATEWAY_TOKEN", "").strip():
                 arguments.extend(("--auth", "token"))
             _run_runtime_hooks("pre-gateway", runtime_env, runner)
+            if scheduling_requested(runtime_env):
+                spawner(
+                    [*ephemeral_command(), "schedule"],
+                    env=runtime_env,
+                )
             execvpe(arguments[0], arguments, runtime_env)
             raise RuntimeError("gateway exec unexpectedly returned")
 

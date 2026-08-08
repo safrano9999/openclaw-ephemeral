@@ -14,6 +14,8 @@ and isolated below `container/`.
 openclaw-ephemeral.py configure
 openclaw-ephemeral.py run
 openclaw-ephemeral.py restart
+openclaw-ephemeral.py schedule
+openclaw-ephemeral.py dispatch --repos WELCOME,NEXTCLOUD
 ```
 
 - `configure` writes a fresh configuration and applies the trusted runtime
@@ -21,6 +23,19 @@ openclaw-ephemeral.py restart
 - `run` configures OpenClaw, executes the lifecycle hooks, and starts the
   gateway.
 - `restart` configures OpenClaw and requests a gateway restart.
+- `schedule` reconciles the runtime-owned OpenClaw cron jobs and then runs the
+  selected one-time init hooks.
+- `dispatch` posts to the plugin-owned HTTP hooks of explicit repository names.
+
+Every configuration rebuild scans available `openclaw.plugin.json` manifests
+under the conventional `/opt/safrano9999`, global state-extension, and
+workspace-extension roots. Additional roots can be supplied through the
+path-list/CSV variable `OPENCLAW_PLUGIN_ROOTS`; the established single-root
+`OPENCLAW_PLUGINS_DIR` is also honored. Missing roots and an image with no
+contributed plugins are valid. Discovered plugins are enabled through explicit
+load paths and entries; duplicate plugin ids keep the first root in discovery
+order. This final-image scan also sees plugins contributed by the topmost image
+layer.
 
 Only `run` scans runtime hooks:
 
@@ -100,6 +115,24 @@ mode `approve`. Bearers are stored as environment placeholders such as
 Secret values are represented through environment references in the generated
 configuration. The runtime does not serialize resolved credentials into its
 status output.
+
+Repository-hook scheduling uses exactly three variables:
+
+```text
+OPENCLAW_CRONTAB_TIME=CET 07:00,CET 19:00
+OPENCLAW_CRONTAB_REPOS=WELCOME,NEXTCLOUD,KACHELMANN
+OPENCLAW_REPOS_START_INIT=WELCOME,KACHELMANN
+```
+
+`OPENCLAW_CRONTAB_TIME` is interpreted as wall-clock time in
+`Europe/Vienna`; the IANA timezone applies CET/CEST transitions automatically.
+The other two values are CSV lists of repository directory names. Cron jobs use
+native command payloads to call the deterministic `dispatch` mode, without an
+agent/model turn. Unknown repository names and selected plugins without a
+schedulable HTTP hook are configuration errors. When all three variables are
+empty, `schedule` returns immediately. If the local cron CLI first requires
+pairing, `schedule` approves only the pending request matching its own OpenClaw
+device identity and then retries.
 
 ## Tests
 

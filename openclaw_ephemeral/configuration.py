@@ -21,17 +21,20 @@ from .environment import (
     config_path,
     expand_api_key_aliases,
     integer,
+    openclaw_command,
     secret_ref,
     workspace_path,
     without_secret_values,
 )
 from .filesystem import atomic_write_json
+from .plugins import discover_openclaw_plugins, register_openclaw_plugins
 from .providers import (
     OpenAIV1Provider,
     discover_native_models,
     discover_openai_v1_providers,
     select_openai_v1_default,
 )
+from .scheduling import build_schedule_plan
 
 
 DUMMY_MODEL = "dummy/dummy"
@@ -53,6 +56,7 @@ class ConfigurationResult:
     telegram_configured: bool
     note_full_mode: bool
     warnings: tuple[str, ...]
+    plugin_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -612,6 +616,13 @@ def configure(
         opener=opener,
     )
     mcp_servers = discover_mcp_servers(injected)
+    discovered_plugins, plugin_warnings = discover_openclaw_plugins(
+        injected,
+        destination=destination,
+    )
+    # Validate the two explicit repository selections while the complete final
+    # image is visible. The actual gateway-side scheduling happens later.
+    build_schedule_plan(injected, discovered_plugins)
     config, primary_model, note_full_mode = build_config(
         injected,
         destination=destination,
@@ -619,6 +630,12 @@ def configure(
         openai_v1_providers=providers,
         mcp_servers=mcp_servers,
         tailscale_runner=runner,
+    )
+    registered_plugins = register_openclaw_plugins(
+        config,
+        discovered_plugins,
+        environ=injected,
+        destination=destination,
     )
 
     secret_values = {
@@ -635,6 +652,19 @@ def configure(
     if not without_secret_values(config, secret_values):
         raise RuntimeError("Refusing to persist a resolved secret value")
     atomic_write_json(destination, config)
+    if registered_plugins:
+        try:
+            runner(
+                [*openclaw_command(injected), "plugins", "registry", "--refresh"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=dict(injected),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ConfigurationError(
+                f"cannot refresh the OpenClaw plugin registry: {exc}"
+            ) from exc
 
     return ConfigurationResult(
         path=destination,
@@ -645,5 +675,6 @@ def configure(
         mcp_server_count=len(mcp_servers),
         telegram_configured=bool(clean(injected.get("OPENCLAW_TELEGRAMTOKEN"))),
         note_full_mode=note_full_mode,
-        warnings=(*native_warnings, *openai_warnings),
+        warnings=(*native_warnings, *openai_warnings, *plugin_warnings),
+        plugin_count=len(registered_plugins),
     )
