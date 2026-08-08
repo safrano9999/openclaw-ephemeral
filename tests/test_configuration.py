@@ -12,11 +12,25 @@ from unittest.mock import patch
 from openclaw_ephemeral.configuration import (
     DUMMY_MODEL,
     NOTE_MODEL,
-    build_config,
+    build_config as _build_config,
     configure,
     discover_mcp_servers,
 )
 from openclaw_ephemeral.providers import OpenAIV1Provider
+
+
+CONTROL_UI_ORIGINS = (
+    "http://127.0.0.1:18789,"
+    "http://localhost:18789,"
+    "http://127.0.0.1:20789"
+)
+
+
+def build_config(environ: dict[str, str], **kwargs: object):
+    return _build_config(
+        {"OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": CONTROL_UI_ORIGINS, **environ},
+        **kwargs,
+    )
 
 
 def provider(
@@ -312,6 +326,11 @@ class ConfigBuilderTests(unittest.TestCase):
                     "FASTAPI_HOST": "10.0.0.5",
                     "OPENCLAW_GATEWAY_PORT": "19000",
                     "OPENCLAW_GATEWAY_PUBLISH_PORT": "29000",
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": (
+                        "https://control.example.test/,"
+                        "http://localhost:19000,"
+                        "https://control.example.test"
+                    ),
                     "OPENCLAW_GATEWAY_TOKEN": secrets["gateway"],
                     "OPENCLAW_TELEGRAMTOKEN": secrets["telegram"],
                     "OPENCLAW_TELEGRAM_CHAT_ID": "5475045993",
@@ -326,6 +345,10 @@ class ConfigBuilderTests(unittest.TestCase):
                 "OPENCLAW_GATEWAY_TOKEN",
             )
             self.assertTrue(gateway["controlUi"]["allowInsecureAuth"])
+            self.assertEqual(
+                gateway["controlUi"]["allowedOrigins"],
+                ["https://control.example.test", "http://localhost:19000"],
+            )
             telegram = config["channels"]["telegram"]
             self.assertEqual(
                 telegram["accounts"]["default"]["botToken"]["id"],
@@ -349,7 +372,23 @@ class ConfigBuilderTests(unittest.TestCase):
             self.assertNotIn(secrets["gateway"], serialized)
             self.assertNotIn(secrets["telegram"], serialized)
 
-    def test_gateway_adds_tailscale_origins(self) -> None:
+    def test_gateway_uses_example_origin_preset(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = build_config(
+                {"HOME": raw},
+                destination=Path(raw) / "openclaw.json",
+            )
+
+        self.assertEqual(
+            config["gateway"]["controlUi"]["allowedOrigins"],
+            [
+                "http://127.0.0.1:18789",
+                "http://localhost:18789",
+                "http://127.0.0.1:20789",
+            ],
+        )
+
+    def test_gateway_auto_adds_cloudflare_and_tailscale_origins_once(self) -> None:
         status = {
             "Self": {
                 "DNSName": "runtime.example.ts.net.",
@@ -357,22 +396,34 @@ class ConfigBuilderTests(unittest.TestCase):
             }
         }
 
-        def tailscale_runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        def tailscale_runner(
+            *_args: object,
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess([], 0, stdout=json.dumps(status))
 
         with tempfile.TemporaryDirectory() as raw:
             config, _, _ = build_config(
                 {
                     "HOME": raw,
-                    "TS_HOSTNAME": "configured.example.ts.net",
                     "OPENCLAW_GATEWAY_PORT": "19000",
                     "OPENCLAW_GATEWAY_PUBLISH_PORT": "29000",
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": (
+                        "http://localhost:19000,"
+                        "http://runtime.example.ts.net:19000"
+                    ),
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO": "1",
+                    "CITADEL_CLOUDFLARE": "1",
+                    "CITADEL_CLOUDFLARE_DOMAIN": "Services.Example.Test.",
+                    "CITADEL_DATA_DIR": raw,
+                    "TS_HOSTNAME": "configured.example.ts.net",
                 },
                 destination=Path(raw) / "openclaw.json",
                 tailscale_runner=tailscale_runner,
             )
 
         origins = config["gateway"]["controlUi"]["allowedOrigins"]
+        self.assertIn("https://19000.services.example.test", origins)
         for host in (
             "runtime.example.ts.net",
             "100.64.0.10",
@@ -381,22 +432,111 @@ class ConfigBuilderTests(unittest.TestCase):
         ):
             self.assertIn(f"http://{host}:19000", origins)
             self.assertIn(f"http://{host}:29000", origins)
+        self.assertEqual(origins.count("http://runtime.example.ts.net:19000"), 1)
 
-    def test_gateway_tolerates_unavailable_tailscale(self) -> None:
+    def test_gateway_auto_prefers_reconciled_cloudflare_route(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            routes = Path(raw) / "extensions/enabled/cloudflare/routes.json"
+            routes.parent.mkdir(parents=True)
+            routes.write_text(
+                json.dumps(
+                    {
+                        "services": {
+                            "19000": {"url": "https://custom.example.test"}
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config, _, _ = build_config(
+                {
+                    "HOME": raw,
+                    "OPENCLAW_GATEWAY_PORT": "19000",
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": (
+                        "http://localhost:19000"
+                    ),
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO": "1",
+                    "CITADEL_CLOUDFLARE": "1",
+                    "CITADEL_CLOUDFLARE_DOMAIN": "services.example.test",
+                    "CITADEL_DATA_DIR": raw,
+                },
+                destination=Path(raw) / "openclaw.json",
+            )
+
+        origins = config["gateway"]["controlUi"]["allowedOrigins"]
+        self.assertIn("https://custom.example.test", origins)
+        self.assertNotIn("https://19000.services.example.test", origins)
+
+    def test_gateway_auto_discovery_failures_are_skipped(self) -> None:
         def unavailable(*_args: object, **_kwargs: object) -> None:
-            raise subprocess.CalledProcessError(1, "tailscale")
+            raise PermissionError("tailscale unavailable")
 
         with tempfile.TemporaryDirectory() as raw:
             config, _, _ = build_config(
-                {"HOME": raw, "TS_HOSTNAME": "runtime"},
+                {
+                    "HOME": raw,
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": (
+                        "https://control.example.test"
+                    ),
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO": "1",
+                    "CITADEL_CLOUDFLARE": "1",
+                    "CITADEL_CLOUDFLARE_DOMAIN": "invalid domain",
+                    "OPENCLAW_GATEWAY_PUBLISH_PORT": "invalid",
+                    "TS_HOSTNAME": "configured.example.ts.net",
+                },
                 destination=Path(raw) / "openclaw.json",
                 tailscale_runner=unavailable,
             )
 
-        self.assertIn(
-            "http://127.0.0.1:18789",
+        self.assertEqual(
             config["gateway"]["controlUi"]["allowedOrigins"],
+            ["https://control.example.test"],
         )
+
+    def test_gateway_auto_zero_keeps_csv_exact(self) -> None:
+        def must_not_run(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("tailscale discovery must be disabled")
+
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = build_config(
+                {
+                    "HOME": raw,
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": (
+                        "https://control.example.test"
+                    ),
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO": "0",
+                    "CITADEL_CLOUDFLARE": "1",
+                    "CITADEL_CLOUDFLARE_DOMAIN": "services.example.test",
+                    "TS_HOSTNAME": "configured.example.ts.net",
+                },
+                destination=Path(raw) / "openclaw.json",
+                tailscale_runner=must_not_run,
+            )
+
+        self.assertEqual(
+            config["gateway"]["controlUi"]["allowedOrigins"],
+            ["https://control.example.test"],
+        )
+
+    def test_gateway_rejects_non_origin_control_ui_entries(self) -> None:
+        for value in (
+            "https://*.example.test",
+            "https://example.test/control-ui",
+            "example.test",
+            "",
+        ):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as raw:
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS",
+                ):
+                    build_config(
+                        {
+                            "HOME": raw,
+                            "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": value,
+                        },
+                        destination=Path(raw) / "openclaw.json",
+                    )
 
     def test_custom_provider_secret_is_only_an_env_reference(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

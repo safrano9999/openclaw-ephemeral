@@ -40,8 +40,6 @@ MAX_MCP_SERVERS = 50
 MCP_FIELDS = ("NAME", "URL", "BEARER")
 MCP_SUFFIX = re.compile(r"^MCP_SERVER_(?:NAME|URL|BEARER)_(\d+)$")
 SAFE_MCP_SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-
-
 @dataclass(frozen=True)
 class ConfigurationResult:
     """Non-sensitive summary of one complete configuration rebuild."""
@@ -182,6 +180,45 @@ def discover_mcp_servers(
     return tuple(servers)
 
 
+def _control_ui_allowed_origins(environ: Mapping[str, str]) -> list[str]:
+    name = "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS"
+    raw = clean(environ.get(name))
+    candidates = raw.split(",")
+    origins: list[str] = []
+    for candidate in candidates:
+        candidate = clean(candidate)
+        parsed = urlsplit(candidate)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ConfigurationError(f"{name} contains an invalid port") from exc
+        if (
+            not candidate
+            or parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or "*" in candidate
+            or any(character.isspace() for character in candidate)
+        ):
+            raise ConfigurationError(
+                f"{name} must contain comma-separated exact HTTP(S) origins"
+            )
+        hostname = parsed.hostname.lower()
+        if ":" in hostname:
+            hostname = f"[{hostname}]"
+        netloc = hostname if port is None else f"{hostname}:{port}"
+        origin = f"{parsed.scheme.lower()}://{netloc}"
+        if origin not in origins:
+            origins.append(origin)
+    if not origins:
+        raise ConfigurationError(f"{name} must contain at least one origin")
+    return origins
+
+
 def _origin(host: str, port: int) -> str:
     host = host.strip() or "127.0.0.1"
     if ":" in host and not host.startswith("["):
@@ -198,7 +235,6 @@ def _tailscale_hosts(
     if not ts_hostname:
         return []
 
-    hosts: list[str] = []
     try:
         result = runner(
             ["tailscale", "status", "--json"],
@@ -209,13 +245,13 @@ def _tailscale_hosts(
         )
         payload = json.loads(result.stdout)
     except (
-        FileNotFoundError,
-        subprocess.CalledProcessError,
-        subprocess.TimeoutExpired,
+        OSError,
+        subprocess.SubprocessError,
         json.JSONDecodeError,
     ):
-        payload = {}
+        return []
 
+    hosts: list[str] = []
     self_info = payload.get("Self") if isinstance(payload, dict) else {}
     if isinstance(self_info, dict):
         dns_name = clean(self_info.get("DNSName")).rstrip(".")
@@ -230,6 +266,65 @@ def _tailscale_hosts(
     return list(dict.fromkeys(hosts))
 
 
+def _automatic_control_ui_origins(
+    environ: Mapping[str, str],
+    *,
+    port: int,
+    runner: Callable[..., Any],
+) -> list[str]:
+    candidates: list[str] = []
+    if clean(environ.get("CITADEL_CLOUDFLARE")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        data_root = Path(
+            clean(environ.get("CITADEL_DATA_DIR"))
+            or "/opt/safrano9999/CITADEL"
+        )
+        routes_path = data_root / "extensions/enabled/cloudflare/routes.json"
+        cloudflare_url = ""
+        try:
+            payload = json.loads(routes_path.read_text(encoding="utf-8"))
+            services = payload.get("services") if isinstance(payload, dict) else {}
+            route = services.get(str(port)) if isinstance(services, dict) else {}
+            cloudflare_url = clean(route.get("url")) if isinstance(route, dict) else ""
+        except (OSError, json.JSONDecodeError):
+            pass
+        if cloudflare_url:
+            candidates.append(cloudflare_url)
+        else:
+            domain = clean(environ.get("CITADEL_CLOUDFLARE_DOMAIN")).strip(".")
+            if domain:
+                candidates.append(f"https://{port}.{domain}")
+
+    try:
+        publish_port = int(
+            clean(environ.get("OPENCLAW_GATEWAY_PUBLISH_PORT")) or "20789"
+        )
+        if not 1 <= publish_port <= 65_535:
+            publish_port = None
+    except ValueError:
+        publish_port = None
+    for host in _tailscale_hosts(environ, runner=runner):
+        candidates.append(_origin(host, port))
+        if publish_port is not None:
+            candidates.append(_origin(host, publish_port))
+
+    origins: list[str] = []
+    for candidate in candidates:
+        try:
+            normalized = _control_ui_allowed_origins(
+                {"OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": candidate}
+            )[0]
+        except (ConfigurationError, ValueError):
+            continue
+        if normalized not in origins:
+            origins.append(normalized)
+    return origins
+
+
 def _gateway_config(
     environ: Mapping[str, str],
     *,
@@ -241,28 +336,18 @@ def _gateway_config(
         default=18_789,
         maximum=65_535,
     )
-    publish_port = integer(
-        environ,
-        "OPENCLAW_GATEWAY_PUBLISH_PORT",
-        default=20_789,
-        maximum=65_535,
-    )
-    host = clean(environ.get("FASTAPI_HOST")) or "127.0.0.1"
-    origins = [
-        _origin(host, port),
-        _origin("127.0.0.1", port),
-        _origin("localhost", port),
-        _origin(host, publish_port),
-    ]
-    for tailscale_host in _tailscale_hosts(environ, runner=tailscale_runner):
-        origins.extend(
-            [
-                _origin(tailscale_host, port),
-                _origin(tailscale_host, publish_port),
-            ]
-        )
-    origins = list(dict.fromkeys(origins))
-
+    origins = _control_ui_allowed_origins(environ)
+    auto = clean(
+        environ.get("OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO", "0")
+    ).lower()
+    if auto in {"1", "true", "yes", "on"}:
+        for origin in _automatic_control_ui_origins(
+            environ,
+            port=port,
+            runner=tailscale_runner,
+        ):
+            if origin not in origins:
+                origins.append(origin)
     gateway: dict[str, Any] = {
         "mode": "local",
         "bind": "lan",

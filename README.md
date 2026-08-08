@@ -60,7 +60,23 @@ catalog headers; it cannot replace the generated bearer authorization.
 merged with discovery results, or used as a fallback when `/models` is not
 available. Neither option depends on a provider name.
 Gateway and Telegram configuration use `OPENCLAW_GATEWAY_*` and
-`OPENCLAW_TELEGRAMTOKEN`.
+`OPENCLAW_TELEGRAMTOKEN`. `OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS` supplies the
+fixed base for `gateway.controlUi.allowedOrigins`; it accepts comma-separated
+exact HTTP(S) origins without paths or wildcards. For example:
+
+```text
+OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS=http://127.0.0.1:18789,http://localhost:18789,http://127.0.0.1:20789
+```
+
+The example configuration is the sole source of that fixed preset; the runtime
+does not carry a second hard-coded list. The example also presets
+`OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO=1`. At `1`, the runtime appends a
+missing Cloudflare origin derived from `CITADEL_CLOUDFLARE_DOMAIN` when
+Cloudflare is enabled, plus current Tailscale DNS/IP origins for the internal
+and published gateway ports. At `0`, the CSV list remains exact.
+An existing reconciled Cloudflare route in `CITADEL_DATA_DIR` takes precedence
+over the derived hostname. Unavailable or invalid automatic sources are
+silently skipped.
 
 Optional global HTTP MCP servers use repeatable groups:
 
