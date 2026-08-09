@@ -523,7 +523,6 @@ class ConfigBuilderTests(unittest.TestCase):
             "https://*.example.test",
             "https://example.test/control-ui",
             "example.test",
-            "",
         ):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as raw:
                 with self.assertRaisesRegex(

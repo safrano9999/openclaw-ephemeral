@@ -187,6 +187,8 @@ def discover_mcp_servers(
 def _control_ui_allowed_origins(environ: Mapping[str, str]) -> list[str]:
     name = "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS"
     raw = clean(environ.get(name))
+    if not raw:
+        return []
     candidates = raw.split(",")
     origins: list[str] = []
     for candidate in candidates:
@@ -218,8 +220,6 @@ def _control_ui_allowed_origins(environ: Mapping[str, str]) -> list[str]:
         origin = f"{parsed.scheme.lower()}://{netloc}"
         if origin not in origins:
             origins.append(origin)
-    if not origins:
-        raise ConfigurationError(f"{name} must contain at least one origin")
     return origins
 
 
