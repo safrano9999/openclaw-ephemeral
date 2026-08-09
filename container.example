@@ -3,8 +3,5 @@
 #default-preset: 2
 CONTAINER_NR=2
 
-#default-preset: default
-OPENCLAW_EPHEMERAL_NETWORK=default
-
 #required: OpenClaw published gateway port
 OPENCLAW_GATEWAY_PUBLISH_PORT=18789
