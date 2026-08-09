@@ -415,7 +415,6 @@ class ConfigBuilderTests(unittest.TestCase):
                     "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO": "1",
                     "CITADEL_CLOUDFLARE": "1",
                     "CITADEL_CLOUDFLARE_DOMAIN": "Services.Example.Test.",
-                    "CITADEL_DATA_DIR": raw,
                     "TS_HOSTNAME": "configured.example.ts.net",
                 },
                 destination=Path(raw) / "openclaw.json",
@@ -433,39 +432,6 @@ class ConfigBuilderTests(unittest.TestCase):
             self.assertIn(f"http://{host}:19000", origins)
             self.assertIn(f"http://{host}:29000", origins)
         self.assertEqual(origins.count("http://runtime.example.ts.net:19000"), 1)
-
-    def test_gateway_auto_prefers_reconciled_cloudflare_route(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            routes = Path(raw) / "extensions/enabled/cloudflare/routes.json"
-            routes.parent.mkdir(parents=True)
-            routes.write_text(
-                json.dumps(
-                    {
-                        "services": {
-                            "19000": {"url": "https://custom.example.test"}
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
-            config, _, _ = build_config(
-                {
-                    "HOME": raw,
-                    "OPENCLAW_GATEWAY_PORT": "19000",
-                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": (
-                        "http://localhost:19000"
-                    ),
-                    "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS_AUTO": "1",
-                    "CITADEL_CLOUDFLARE": "1",
-                    "CITADEL_CLOUDFLARE_DOMAIN": "services.example.test",
-                    "CITADEL_DATA_DIR": raw,
-                },
-                destination=Path(raw) / "openclaw.json",
-            )
-
-        origins = config["gateway"]["controlUi"]["allowedOrigins"]
-        self.assertIn("https://custom.example.test", origins)
-        self.assertNotIn("https://19000.services.example.test", origins)
 
     def test_gateway_auto_discovery_failures_are_skipped(self) -> None:
         def unavailable(*_args: object, **_kwargs: object) -> None:

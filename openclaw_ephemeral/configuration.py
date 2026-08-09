@@ -283,25 +283,9 @@ def _automatic_control_ui_origins(
         "yes",
         "on",
     }:
-        data_root = Path(
-            clean(environ.get("CITADEL_DATA_DIR"))
-            or "/opt/safrano9999/CITADEL"
-        )
-        routes_path = data_root / "extensions/enabled/cloudflare/routes.json"
-        cloudflare_url = ""
-        try:
-            payload = json.loads(routes_path.read_text(encoding="utf-8"))
-            services = payload.get("services") if isinstance(payload, dict) else {}
-            route = services.get(str(port)) if isinstance(services, dict) else {}
-            cloudflare_url = clean(route.get("url")) if isinstance(route, dict) else ""
-        except (OSError, json.JSONDecodeError):
-            pass
-        if cloudflare_url:
-            candidates.append(cloudflare_url)
-        else:
-            domain = clean(environ.get("CITADEL_CLOUDFLARE_DOMAIN")).strip(".")
-            if domain:
-                candidates.append(f"https://{port}.{domain}")
+        domain = clean(environ.get("CITADEL_CLOUDFLARE_DOMAIN")).strip(".")
+        if domain:
+            candidates.append(f"https://{port}.{domain}")
 
     try:
         publish_port = int(

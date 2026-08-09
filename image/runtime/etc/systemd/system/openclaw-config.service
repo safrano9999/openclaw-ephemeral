@@ -1,0 +1,17 @@
+[Unit]
+Description=Rebuild ephemeral OpenClaw configuration
+Requires=persistainer.service
+Wants=network-online.target fedora44-ai-init-hooks.service tailscale-up.service
+After=network-online.target persistainer.service fedora44-ai-init-hooks.service tailscale-up.service
+Before=openclaw.service
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecCondition=/bin/bash -c '[ "$${OPENCLAW_START:-1}" = "1" ]'
+ExecStart=/usr/local/bin/openclaw-ephemeral.py configure
+RemainAfterExit=yes
+TimeoutStartSec=450
+
+[Install]
+WantedBy=multi-user.target

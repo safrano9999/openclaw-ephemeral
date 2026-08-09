@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +26,7 @@ CRONTAB_REPOS_ENV = "OPENCLAW_CRONTAB_REPOS"
 START_INIT_ENV = "OPENCLAW_REPOS_START_INIT"
 CRON_TIMEZONE = "Europe/Vienna"
 CRON_NAME_PREFIX = "openclaw-ephemeral-repositories-europe-vienna-"
+CRON_CLI_TIMEOUT_SECONDS = 30
 CRON_COMMAND_TIMEOUT_SECONDS = 3_600
 TIME_SPEC = re.compile(
     r"^(?:(?:CET|CEST|Europe/Vienna)\s+)?"
@@ -245,6 +245,7 @@ def _approve_current_device(
         check=True,
         capture_output=True,
         text=True,
+        timeout=CRON_CLI_TIMEOUT_SECONDS,
         env=dict(environ),
     )
 
@@ -253,8 +254,13 @@ def _list_cron_jobs(
     environ: Mapping[str, str],
     *,
     runner: Callable[..., Any],
-    sleeper: Callable[[float], Any],
 ) -> tuple[Mapping[str, Any], ...]:
+    try:
+        _approve_current_device(environ, runner=runner)
+    except (OSError, subprocess.SubprocessError):
+        # Pairing is only needed for a fresh local CLI identity. The single
+        # authoritative cron call below decides whether scheduling can proceed.
+        pass
     arguments = [
         *openclaw_command(environ),
         "cron",
@@ -263,47 +269,37 @@ def _list_cron_jobs(
         *_gateway_auth(environ),
         "--json",
     ]
-    last_error = "gateway did not become ready"
-    pairing_attempted = False
-    for attempt in range(30):
-        try:
-            result = runner(
-                arguments,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                env=dict(environ),
-            )
-        except subprocess.TimeoutExpired:
-            last_error = "OpenClaw cron list timed out"
-        except subprocess.SubprocessError as exc:
-            last_error = f"OpenClaw cron list process error ({type(exc).__name__})"
-        except OSError as exc:
-            last_error = str(exc)
-        else:
-            if getattr(result, "returncode", 1) == 0:
-                payload = _json_stdout(result)
-                jobs = payload.get("jobs") if isinstance(payload, Mapping) else None
-                if isinstance(jobs, list):
-                    return tuple(job for job in jobs if isinstance(job, Mapping))
-                last_error = "OpenClaw cron list returned invalid JSON"
-            else:
-                stderr = clean(getattr(result, "stderr", ""))
-                stdout = clean(getattr(result, "stdout", ""))
-                last_error = stderr or stdout or "OpenClaw cron list failed"
+    try:
+        result = runner(
+            arguments,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=CRON_CLI_TIMEOUT_SECONDS,
+            env=dict(environ),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ConfigurationError(
+            f"OpenClaw cron list timed out after {CRON_CLI_TIMEOUT_SECONDS} seconds"
+        ) from exc
+    except subprocess.SubprocessError as exc:
+        raise ConfigurationError(
+            f"OpenClaw cron list process error ({type(exc).__name__})"
+        ) from exc
+    except OSError as exc:
+        raise ConfigurationError(f"OpenClaw cron list failed: {exc}") from exc
 
-        if not pairing_attempted:
-            pairing_attempted = True
-            try:
-                _approve_current_device(environ, runner=runner)
-            except (OSError, subprocess.SubprocessError):
-                pass
-        if attempt < 29:
-            sleeper(2)
-    raise ConfigurationError(
-        f"cannot reach OpenClaw cron service after 30 attempts: {last_error}"
-    )
+    if getattr(result, "returncode", 1) != 0:
+        stderr = clean(getattr(result, "stderr", ""))
+        stdout = clean(getattr(result, "stdout", ""))
+        detail = stderr or stdout or "OpenClaw cron list failed"
+        raise ConfigurationError(f"OpenClaw cron list failed: {detail}")
+
+    payload = _json_stdout(result)
+    jobs = payload.get("jobs") if isinstance(payload, Mapping) else None
+    if not isinstance(jobs, list):
+        raise ConfigurationError("OpenClaw cron list returned invalid JSON")
+    return tuple(job for job in jobs if isinstance(job, Mapping))
 
 
 def _dispatch_argv(
@@ -351,6 +347,7 @@ def _run_checked(
     environ: Mapping[str, str],
     *,
     runner: Callable[..., Any],
+    operation: str,
 ) -> None:
     try:
         runner(
@@ -358,21 +355,28 @@ def _run_checked(
             check=True,
             capture_output=True,
             text=True,
+            timeout=CRON_CLI_TIMEOUT_SECONDS,
             env=dict(environ),
         )
+    except subprocess.TimeoutExpired as exc:
+        raise ConfigurationError(
+            f"OpenClaw cron {operation} timed out after "
+            f"{CRON_CLI_TIMEOUT_SECONDS} seconds"
+        ) from exc
     except subprocess.CalledProcessError as exc:
         raise ConfigurationError(
-            f"OpenClaw command failed with status {exc.returncode}: "
+            f"OpenClaw cron {operation} failed with status {exc.returncode}: "
             f"{' '.join(arguments[:4])}"
         ) from exc
     except subprocess.SubprocessError as exc:
         raise ConfigurationError(
-            f"OpenClaw command process error ({type(exc).__name__}): "
+            f"OpenClaw cron {operation} process error ({type(exc).__name__}): "
             f"{' '.join(arguments[:4])}"
         ) from exc
     except OSError as exc:
         raise ConfigurationError(
-            f"OpenClaw command failed: {' '.join(arguments[:4])}: {exc}"
+            f"OpenClaw cron {operation} failed: "
+            f"{' '.join(arguments[:4])}: {exc}"
         ) from exc
 
 
@@ -393,6 +397,7 @@ def _remove_cron_job(
         ],
         environ,
         runner=runner,
+        operation="rm",
     )
 
 
@@ -426,14 +431,12 @@ def _add_cron_job(
         *_gateway_auth(environ),
         "--json",
     ]
-    try:
-        _run_checked(arguments, environ, runner=runner)
-    except ConfigurationError as first_error:
-        try:
-            _approve_current_device(environ, runner=runner)
-        except (OSError, subprocess.SubprocessError) as approval_error:
-            raise first_error from approval_error
-        _run_checked(arguments, environ, runner=runner)
+    _run_checked(
+        arguments,
+        environ,
+        runner=runner,
+        operation="add",
+    )
 
 
 def reconcile_cron_jobs(
@@ -441,11 +444,10 @@ def reconcile_cron_jobs(
     environ: Mapping[str, str],
     *,
     runner: Callable[..., Any] = subprocess.run,
-    sleeper: Callable[[float], Any] = time.sleep,
 ) -> tuple[int, int, int]:
     """Keep exact jobs, remove stale/duplicate owned jobs, and add missing jobs."""
 
-    jobs = _list_cron_jobs(environ, runner=runner, sleeper=sleeper)
+    jobs = _list_cron_jobs(environ, runner=runner)
     argv = _dispatch_argv(environ, plan.cron_plugins)
     desired = {
         f"{CRON_NAME_PREFIX}{local_time.label}": local_time
@@ -553,7 +555,6 @@ def schedule(
     *,
     runner: Callable[..., Any] = subprocess.run,
     opener: Callable[..., Any] = urlopen,
-    sleeper: Callable[[float], Any] = time.sleep,
 ) -> ScheduleResult:
     """Reconcile managed cron jobs, then run explicitly selected init hooks once."""
 
@@ -569,7 +570,6 @@ def schedule(
         plan,
         environ,
         runner=runner,
-        sleeper=sleeper,
     )
     initialized = dispatch_plugins(plan.init_plugins, environ, opener=opener)
     return ScheduleResult(kept, removed, added, initialized)

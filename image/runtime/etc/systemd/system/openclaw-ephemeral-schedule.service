@@ -1,0 +1,21 @@
+[Unit]
+Description=Integrate final OpenClaw repository schedules
+Requires=openclaw.service
+After=openclaw.service
+After=citadel.service codeanalyst.service
+After=kachelmann-webui.service kachelmann-mcp.service
+After=jugo.service kiwix-bridge.service
+After=napoleon.service naturalgrounding.service
+After=pvdach.service pvdach-qgis-webhook.service spanker-webui.service
+After=vikai-bootstrap-openclaw-agents.service
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecCondition=/bin/bash -c '[ "$${OPENCLAW_START:-1}" = "1" ]'
+ExecStart=/usr/local/bin/openclaw-ephemeral.py schedule
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+import subprocess
+import unittest
+from pathlib import Path
+
+from openclaw_ephemeral.environment import ConfigurationError
+from openclaw_ephemeral.scheduling import (
+    CRON_CLI_TIMEOUT_SECONDS,
+    CRON_COMMAND_TIMEOUT_SECONDS,
+    LocalTime,
+    _add_cron_job,
+    _list_cron_jobs,
+    _remove_cron_job,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class CronReadinessTests(unittest.TestCase):
+    def pairing_environment(self) -> dict[str, str]:
+        return {"OPENCLAW_DEVICE_BOOTSTRAP_MODULE": str(Path(__file__).resolve())}
+
+    def test_lists_once_after_systemd_readiness(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            return subprocess.CompletedProcess(arguments, 0, '{"jobs": []}', "")
+
+        self.assertEqual(
+            _list_cron_jobs(self.pairing_environment(), runner=runner),
+            (),
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0][0], "node")
+        self.assertEqual(calls[0][1]["timeout"], CRON_CLI_TIMEOUT_SECONDS)
+        self.assertEqual(calls[1][1]["timeout"], CRON_CLI_TIMEOUT_SECONDS)
+
+    def test_pairing_timeout_is_bounded_and_best_effort(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            if arguments[0] == "node":
+                raise subprocess.TimeoutExpired(arguments, kwargs["timeout"])
+            return subprocess.CompletedProcess(arguments, 0, '{"jobs": []}', "")
+
+        self.assertEqual(
+            _list_cron_jobs(self.pairing_environment(), runner=runner),
+            (),
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0][0], "node")
+        self.assertEqual(calls[0][1]["timeout"], CRON_CLI_TIMEOUT_SECONDS)
+        self.assertEqual(calls[1][0][1:3], ["cron", "list"])
+
+    def test_failed_list_is_fail_closed_without_retry(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            return subprocess.CompletedProcess(arguments, 1, "", "gateway error")
+
+        with self.assertRaisesRegex(ConfigurationError, "gateway error"):
+            _list_cron_jobs(self.pairing_environment(), runner=runner)
+        self.assertEqual(len(calls), 2)
+
+    def test_timeout_is_fail_closed_without_retry(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            if arguments[0] == "node":
+                return subprocess.CompletedProcess(arguments, 0, "", "")
+            raise subprocess.TimeoutExpired(arguments, kwargs["timeout"])
+
+        with self.assertRaisesRegex(ConfigurationError, "timed out"):
+            _list_cron_jobs(self.pairing_environment(), runner=runner)
+        self.assertEqual(len(calls), 2)
+
+    def test_remove_has_bounded_cli_timeout(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        _remove_cron_job("job-id", {}, runner=runner)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0][1:3], ["cron", "rm"])
+        self.assertEqual(calls[0][1]["timeout"], CRON_CLI_TIMEOUT_SECONDS)
+
+    def test_remove_timeout_is_reported_without_retry(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            raise subprocess.TimeoutExpired(arguments, kwargs["timeout"])
+
+        with self.assertRaisesRegex(ConfigurationError, "cron rm timed out"):
+            _remove_cron_job("job-id", {}, runner=runner)
+        self.assertEqual(len(calls), 1)
+
+    def test_add_has_bounded_cli_timeout_separate_from_payload_timeout(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        _add_cron_job(
+            LocalTime(hour=19, minute=0),
+            ["/usr/local/bin/openclaw-ephemeral.py", "dispatch"],
+            {},
+            runner=runner,
+        )
+
+        self.assertEqual(len(calls), 1)
+        arguments, kwargs = calls[0]
+        self.assertEqual(arguments[1:3], ["cron", "add"])
+        self.assertEqual(kwargs["timeout"], CRON_CLI_TIMEOUT_SECONDS)
+        payload_timeout_index = arguments.index("--timeout-seconds") + 1
+        self.assertEqual(
+            arguments[payload_timeout_index],
+            str(CRON_COMMAND_TIMEOUT_SECONDS),
+        )
+        self.assertNotEqual(
+            kwargs["timeout"],
+            int(arguments[payload_timeout_index]),
+        )
+
+    def test_add_timeout_is_reported_without_pairing_retry(self) -> None:
+        calls = []
+
+        def runner(arguments, **kwargs):
+            calls.append((arguments, kwargs))
+            raise subprocess.TimeoutExpired(arguments, kwargs["timeout"])
+
+        with self.assertRaisesRegex(ConfigurationError, "cron add timed out"):
+            _add_cron_job(
+                LocalTime(hour=7, minute=0),
+                ["/usr/local/bin/openclaw-ephemeral.py", "dispatch"],
+                self.pairing_environment(),
+                runner=runner,
+            )
+        self.assertEqual(len(calls), 1)
+
+    def test_systemd_schedule_is_last_without_starting_optional_apps(self) -> None:
+        unit = (
+            ROOT
+            / "image/runtime/etc/systemd/system/openclaw-ephemeral-schedule.service"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Requires=openclaw.service", unit)
+        self.assertNotIn("Wants=", unit)
+        for service in (
+            "codeanalyst.service",
+            "kachelmann-webui.service",
+            "jugo.service",
+            "kiwix-bridge.service",
+            "napoleon.service",
+            "naturalgrounding.service",
+            "pvdach.service",
+            "spanker-webui.service",
+            "vikai-bootstrap-openclaw-agents.service",
+        ):
+            self.assertIn(service, unit)
+        self.assertNotIn("After=citadel-scan.service", unit)
+
+    def test_configuration_unit_is_owned_by_openclaw_ephemeral(self) -> None:
+        unit = (
+            ROOT / "image/runtime/etc/systemd/system/openclaw-config.service"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Requires=persistainer.service", unit)
+        self.assertIn("fedora44-ai-init-hooks.service", unit)
+        self.assertIn("tailscale-up.service", unit)
+        self.assertIn("Before=openclaw.service", unit)
+
+
+if __name__ == "__main__":
+    unittest.main()

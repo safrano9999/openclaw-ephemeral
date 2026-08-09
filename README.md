@@ -89,9 +89,7 @@ does not carry a second hard-coded list. The example also presets
 missing Cloudflare origin derived from `CITADEL_CLOUDFLARE_DOMAIN` when
 Cloudflare is enabled, plus current Tailscale DNS/IP origins for the internal
 and published gateway ports. At `0`, the CSV list remains exact.
-An existing reconciled Cloudflare route in `CITADEL_DATA_DIR` takes precedence
-over the derived hostname. Unavailable or invalid automatic sources are
-silently skipped.
+Unavailable or invalid automatic sources are silently skipped.
 
 Optional global HTTP MCP servers use repeatable groups:
 
