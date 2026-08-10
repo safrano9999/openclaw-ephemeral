@@ -222,6 +222,18 @@ jobs:
           )
           assert config["tools"]["profile"] == "full"
           assert config["tools"]["exec"]["mode"] == "full"
+          assert "security" not in config["tools"]["exec"]
+          assert "ask" not in config["tools"]["exec"]
+          approvals = json.loads(
+              Path("/root/.openclaw/exec-approvals.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          assert approvals["defaults"] == {
+              "security": "full",
+              "ask": "off",
+              "askFallback": "full",
+          }
           servers = config["mcp"]["servers"]
           assert set(servers) == {"kachelmann-mcp", "paperless-mcp"}
           assert servers["kachelmann-mcp"]["headers"]["Authorization"] == (

@@ -19,7 +19,8 @@ openclaw-ephemeral.py dispatch --repos WELCOME,NEXTCLOUD
 ```
 
 - `configure` writes a fresh configuration and applies the trusted runtime
-  policy.
+  policy. The policy uses one synchronized exec-approval preset and one
+  validated config patch instead of a sequence of path-based writes.
 - `run` configures OpenClaw, executes the lifecycle hooks, and starts the
   gateway.
 - `restart` configures OpenClaw and requests a gateway restart.

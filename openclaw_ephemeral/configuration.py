@@ -446,14 +446,15 @@ def _plugins_config(note_full_mode: bool) -> dict[str, Any]:
 
 
 def _trusted_container_tools() -> dict[str, Any]:
-    """Return the established trusted-container policy used by existing images."""
+    """Return the preset-compatible trusted policy before CLI normalization."""
 
     return {
         "profile": "full",
         "fs": {"workspaceOnly": False},
         "exec": {
             "host": "gateway",
-            "mode": "full",
+            "security": "full",
+            "ask": "off",
             "applyPatch": {"workspaceOnly": False},
         },
     }

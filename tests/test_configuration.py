@@ -178,7 +178,8 @@ class ConfigBuilderTests(unittest.TestCase):
                     "fs": {"workspaceOnly": False},
                     "exec": {
                         "host": "gateway",
-                        "mode": "full",
+                        "security": "full",
+                        "ask": "off",
                         "applyPatch": {"workspaceOnly": False},
                     },
                 },
