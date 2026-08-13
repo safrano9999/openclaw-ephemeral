@@ -40,8 +40,10 @@ from .scheduling import build_schedule_plan
 DUMMY_MODEL = "dummy/dummy"
 NOTE_MODEL = "dummy/note"
 MAX_MCP_SERVERS = 50
-MCP_FIELDS = ("NAME", "URL", "BEARER")
-MCP_SUFFIX = re.compile(r"^MCP_SERVER_(?:NAME|URL|BEARER)_(\d+)$")
+MCP_FIELDS = ("NAME", "URL", "BEARER", "ALLOW_PRIVATE")
+MCP_SUFFIX = re.compile(
+    r"^MCP_SERVER_(?:NAME|URL|BEARER|ALLOW_PRIVATE)_(\d+)$"
+)
 SAFE_MCP_SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 @dataclass(frozen=True)
 class ConfigurationResult:
@@ -67,6 +69,7 @@ class McpServer:
     name: str
     url: str
     bearer_env: str | None
+    allow_private: bool
 
     def openclaw_config(self) -> dict[str, Any]:
         config: dict[str, Any] = {
@@ -80,6 +83,8 @@ class McpServer:
             config["headers"] = {
                 "Authorization": f"Bearer ${{{self.bearer_env}}}"
             }
+        if self.allow_private:
+            config["allowPrivateNetwork"] = True
         return config
 
 
@@ -179,6 +184,11 @@ def discover_mcp_servers(
                 name=name,
                 url=url,
                 bearer_env=fields["BEARER"] if bearer else None,
+                allow_private=boolean(
+                    environ,
+                    fields["ALLOW_PRIVATE"],
+                    default=False,
+                ),
             )
         )
     return tuple(servers)

@@ -63,6 +63,7 @@ class ConfigBuilderTests(unittest.TestCase):
                         "http://kachelmann-mcp.dns.podman:11041/mcp"
                     ),
                     "MCP_SERVER_BEARER": "first-secret",
+                    "MCP_SERVER_ALLOW_PRIVATE": "1",
                     "MCP_SERVER_NAME_02": "paperless-mcp",
                     "MCP_SERVER_URL_02": "http://paperless-mcp:5000/mcp",
                     "MCP_SERVER_BEARER_02": "",
@@ -87,8 +88,10 @@ class ConfigBuilderTests(unittest.TestCase):
             kachelmann["codex"]["defaultToolsApprovalMode"],
             "approve",
         )
+        self.assertIs(kachelmann["allowPrivateNetwork"], True)
         self.assertNotIn("toolFilter", kachelmann)
         self.assertNotIn("headers", servers["paperless-mcp"])
+        self.assertNotIn("allowPrivateNetwork", servers["paperless-mcp"])
         self.assertNotIn("first-secret", json.dumps(config))
 
     def test_empty_optional_mcp_groups_do_not_create_mcp_config(self) -> None:
@@ -133,6 +136,13 @@ class ConfigBuilderTests(unittest.TestCase):
             (
                 {"MCP_SERVER_URL_01": "http://one.example/mcp"},
                 "between 02 and 50",
+            ),
+            (
+                {
+                    "MCP_SERVER_URL": "http://one.example/mcp",
+                    "MCP_SERVER_ALLOW_PRIVATE": "sometimes",
+                },
+                "MCP_SERVER_ALLOW_PRIVATE",
             ),
         )
         for environ, message in cases:

@@ -9,7 +9,7 @@
 | --- | --- |
 | Runtime image | `ghcr.io/openclaw/openclaw:2026.7.1` |
 | OpenClaw version | `2026.7.1` |
-| Deterministic patch | [`2026.7.1-deterministic.1`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.1) |
+| Deterministic patch | [`2026.7.1-deterministic.2`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.2) |
 | NOTE plugin | [`2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36) |
 | Published image | [`ghcr.io/safrano9999/openclaw-ephemeral`](https://github.com/users/safrano9999/packages/container/package/openclaw-ephemeral) |
 

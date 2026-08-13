@@ -98,10 +98,12 @@ Optional global HTTP MCP servers use repeatable groups:
 MCP_SERVER_NAME=
 MCP_SERVER_URL=
 MCP_SERVER_BEARER=
+MCP_SERVER_ALLOW_PRIVATE=0
 
 MCP_SERVER_NAME_02=
 MCP_SERVER_URL_02=
 MCP_SERVER_BEARER_02=
+MCP_SERVER_ALLOW_PRIVATE_02=0
 ```
 
 The first group has no `_01` suffix; later groups use `_02`, `_03`, and so on.
@@ -110,6 +112,8 @@ missing name derived from the URL hostname. Servers are available globally
 without tool filters, advertise parallel tool calls, and use Codex approval
 mode `approve`. Bearers are stored as environment placeholders such as
 `Bearer ${MCP_SERVER_BEARER_02}`, never as resolved tokens.
+Set the matching `MCP_SERVER_ALLOW_PRIVATE[_NN]` to `1` only for a trusted MCP
+endpoint on loopback, a private network, or a link-local host alias.
 
 Secret values are represented through environment references in the generated
 configuration. The runtime does not serialize resolved credentials into its
@@ -155,7 +159,7 @@ The published image is
 It combines these pinned components:
 
 - `ghcr.io/openclaw/openclaw:2026.7.1`
-- [`openclaw-deterministic` release `2026.7.1-deterministic.1`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.1)
+- [`openclaw-deterministic` release `2026.7.1-deterministic.2`](https://github.com/safrano9999/openclaw-deterministic/releases/tag/2026.7.1-deterministic.2)
 - [NOTE release ZIP `2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36)
 - this repository's environment-driven Python runtime
 

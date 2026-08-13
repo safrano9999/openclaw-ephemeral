@@ -32,7 +32,7 @@ on:
       deterministic_release_tag:
         description: "Immutable release tag from safrano9999/openclaw-deterministic"
         required: true
-        default: "2026.7.1-deterministic.1"
+        default: "2026.7.1-deterministic.2"
         type: string
       deterministic_asset:
         description: "Release tar.gz containing the patched dist directory"
@@ -96,7 +96,7 @@ jobs:
         id: deterministic
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.deterministic_release_tag || '2026.7.1-deterministic.1' }}
+          RELEASE_TAG: ${{ inputs.deterministic_release_tag || '2026.7.1-deterministic.2' }}
           RELEASE_ASSET: ${{ inputs.deterministic_asset || 'openclaw-2026.7.1-deterministic.tar.gz' }}
           RELEASE_SHA256: ${{ inputs.deterministic_sha256 || 'cb0b32c76538ce7789ccb654acdd4c00910ab62813eb68c03a3b6ec1cce1e685' }}
         run: |
@@ -240,6 +240,7 @@ jobs:
               "Bearer ${MCP_SERVER_BEARER}"
           )
           assert servers["kachelmann-mcp"]["supportsParallelToolCalls"] is True
+          assert servers["kachelmann-mcp"]["allowPrivateNetwork"] is True
           assert servers["kachelmann-mcp"]["codex"] == {
               "defaultToolsApprovalMode": "approve"
           }
@@ -254,6 +255,7 @@ jobs:
           docker run --rm \
             -e MCP_SERVER_URL=http://kachelmann-mcp:11041/mcp \
             -e MCP_SERVER_BEARER=workflow-mcp-secret \
+            -e MCP_SERVER_ALLOW_PRIVATE=1 \
             -e MCP_SERVER_NAME_02=paperless-mcp \
             -e MCP_SERVER_URL_02=http://paperless-mcp:5000/mcp \
             -v "$smoke_script:/tmp/openclaw-ephemeral-smoke.sh:ro" \
