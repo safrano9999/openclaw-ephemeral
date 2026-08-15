@@ -329,6 +329,7 @@ class ConfigBuilderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             secrets = {
                 "gateway": "gateway-secret",
+                "hooks": "hooks-secret",
                 "telegram": "telegram-secret",
             }
             config, _, _ = build_config(
@@ -343,6 +344,7 @@ class ConfigBuilderTests(unittest.TestCase):
                         "https://control.example.test"
                     ),
                     "OPENCLAW_GATEWAY_TOKEN": secrets["gateway"],
+                    "OPENCLAW_HOOKS_TOKEN": secrets["hooks"],
                     "OPENCLAW_TELEGRAMTOKEN": secrets["telegram"],
                     "OPENCLAW_TELEGRAM_CHAT_ID": "5475045993",
                 },
@@ -378,9 +380,18 @@ class ConfigBuilderTests(unittest.TestCase):
                 config["commands"]["ownerAllowFrom"],
                 ["telegram:5475045993"],
             )
+            self.assertEqual(
+                config["hooks"],
+                {
+                    "enabled": True,
+                    "token": "${OPENCLAW_HOOKS_TOKEN}",
+                    "path": "/hooks",
+                },
+            )
             self.assertNotIn("bindings", config)
             serialized = json.dumps(config)
             self.assertNotIn(secrets["gateway"], serialized)
+            self.assertNotIn(secrets["hooks"], serialized)
             self.assertNotIn(secrets["telegram"], serialized)
 
     def test_gateway_uses_example_origin_preset(self) -> None:
@@ -398,6 +409,7 @@ class ConfigBuilderTests(unittest.TestCase):
                 "http://127.0.0.1:20789",
             ],
         )
+        self.assertNotIn("hooks", config)
 
     def test_gateway_auto_adds_cloudflare_and_tailscale_origins_once(self) -> None:
         status = {

@@ -364,6 +364,20 @@ def _gateway_config(
     return gateway
 
 
+def _hooks_config(environ: Mapping[str, str]) -> dict[str, Any]:
+    """Enable native agent hooks without persisting their bearer token."""
+
+    if not clean(environ.get("OPENCLAW_HOOKS_TOKEN")):
+        return {}
+    return {
+        "hooks": {
+            "enabled": True,
+            "token": "${OPENCLAW_HOOKS_TOKEN}",
+            "path": "/hooks",
+        }
+    }
+
+
 def _main_agent_config(
     environ: Mapping[str, str],
     destination: Path,
@@ -585,6 +599,7 @@ def build_config(
     custom_models = _models_config(providers)
     if custom_models:
         config["models"] = custom_models
+    config.update(_hooks_config(environ))
     config.update(_telegram_config(environ))
     return config, primary_model, note_full_mode
 
@@ -641,7 +656,11 @@ def configure(
             name.endswith("_API_KEY")
             or name.startswith("OPENAI_V1_KEY")
             or name.startswith("MCP_SERVER_BEARER")
-            or name in {"OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_TELEGRAMTOKEN"}
+            or name in {
+                "OPENCLAW_GATEWAY_TOKEN",
+                "OPENCLAW_HOOKS_TOKEN",
+                "OPENCLAW_TELEGRAMTOKEN",
+            }
         )
     }
     if not without_secret_values(config, secret_values):
