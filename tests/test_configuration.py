@@ -331,6 +331,7 @@ class ConfigBuilderTests(unittest.TestCase):
                 "gateway": "gateway-secret",
                 "hooks": "hooks-secret",
                 "telegram": "telegram-secret",
+                "telegram_auto": "telegram-auto-secret",
             }
             config, _, _ = build_config(
                 {
@@ -346,7 +347,13 @@ class ConfigBuilderTests(unittest.TestCase):
                     "OPENCLAW_GATEWAY_TOKEN": secrets["gateway"],
                     "OPENCLAW_HOOKS_TOKEN": secrets["hooks"],
                     "OPENCLAW_TELEGRAMTOKEN": secrets["telegram"],
+                    "OPENCLAW_TELEGRAM_AGENT": "main",
                     "OPENCLAW_TELEGRAM_CHAT_ID": "5475045993",
+                    "OPENCLAW_TELEGRAM_DEFAULT": "1",
+                    "OPENCLAW_TELEGRAMTOKEN_02": secrets["telegram_auto"],
+                    "OPENCLAW_TELEGRAM_AGENT_02": "auto",
+                    "OPENCLAW_TELEGRAM_CHAT_ID_02": "987654321",
+                    "OPENCLAW_TELEGRAM_DEFAULT_02": "0",
                 },
                 destination=Path(raw) / "openclaw.json",
             )
@@ -364,21 +371,25 @@ class ConfigBuilderTests(unittest.TestCase):
             )
             telegram = config["channels"]["telegram"]
             self.assertEqual(
-                telegram["accounts"]["default"]["botToken"]["id"],
+                telegram["accounts"]["main"]["botToken"]["id"],
                 "OPENCLAW_TELEGRAMTOKEN",
             )
             self.assertEqual(
+                telegram["accounts"]["auto"]["botToken"]["id"],
+                "OPENCLAW_TELEGRAMTOKEN_02",
+            )
+            self.assertEqual(
                 telegram["defaultAccount"],
-                "default",
+                "main",
             )
             self.assertEqual(telegram["streaming"], {"mode": "off"})
             self.assertEqual(
-                telegram["accounts"]["default"]["streaming"],
+                telegram["accounts"]["main"]["streaming"],
                 {"mode": "partial"},
             )
             self.assertEqual(
                 config["commands"]["ownerAllowFrom"],
-                ["telegram:5475045993"],
+                ["telegram:5475045993", "telegram:987654321"],
             )
             self.assertEqual(
                 config["hooks"],
@@ -388,11 +399,34 @@ class ConfigBuilderTests(unittest.TestCase):
                     "path": "/hooks",
                 },
             )
-            self.assertNotIn("bindings", config)
+            self.assertEqual(
+                config["bindings"],
+                [
+                    {
+                        "agentId": "main",
+                        "match": {"channel": "telegram", "accountId": "main"},
+                    },
+                    {
+                        "agentId": "auto",
+                        "match": {"channel": "telegram", "accountId": "auto"},
+                    },
+                ],
+            )
+            self.assertEqual(
+                [agent["id"] for agent in config["agents"]["list"]],
+                ["main", "auto"],
+            )
+            self.assertTrue(
+                all(
+                    agent["tools"] == {"allow": ["*"], "deny": []}
+                    for agent in config["agents"]["list"]
+                )
+            )
             serialized = json.dumps(config)
             self.assertNotIn(secrets["gateway"], serialized)
             self.assertNotIn(secrets["hooks"], serialized)
             self.assertNotIn(secrets["telegram"], serialized)
+            self.assertNotIn(secrets["telegram_auto"], serialized)
 
     def test_gateway_uses_example_origin_preset(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

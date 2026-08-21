@@ -45,6 +45,12 @@ MCP_SUFFIX = re.compile(
     r"^MCP_SERVER_(?:NAME|URL|BEARER|ALLOW_PRIVATE)_(\d+)$"
 )
 SAFE_MCP_SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+TELEGRAM_SUFFIX = re.compile(
+    r"^OPENCLAW_TELEGRAM(?:TOKEN|_(?:AGENT|CHAT_ID|DEFAULT))_(0?[2-9]|[1-4][0-9]|50)$"
+)
+SAFE_AGENT_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+
+
 @dataclass(frozen=True)
 class ConfigurationResult:
     """Non-sensitive summary of one complete configuration rebuild."""
@@ -378,45 +384,120 @@ def _hooks_config(environ: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
+def _telegram_key(environ: Mapping[str, str], base: str, index: int) -> str:
+    if index == 1:
+        return base
+    for key in (f"{base}_{index:02d}", f"{base}_{index}"):
+        if key in environ:
+            return key
+    return f"{base}_{index:02d}"
+
+
+def _telegram_accounts(environ: Mapping[str, str]) -> tuple[dict[str, Any], ...]:
+    indexes = {
+        1,
+        *(
+            int(match.group(1))
+            for key in environ
+            if (match := TELEGRAM_SUFFIX.fullmatch(key))
+        ),
+    }
+    accounts: list[dict[str, Any]] = []
+    for index in sorted(indexes):
+        token_key = _telegram_key(environ, "OPENCLAW_TELEGRAMTOKEN", index)
+        if not clean(environ.get(token_key)):
+            continue
+        agent = clean(
+            environ.get(_telegram_key(environ, "OPENCLAW_TELEGRAM_AGENT", index))
+        ).lower() or ("main" if index == 1 else "")
+        chat = clean(
+            environ.get(_telegram_key(environ, "OPENCLAW_TELEGRAM_CHAT_ID", index))
+        ).removeprefix("telegram:")
+        if not SAFE_AGENT_ID.fullmatch(agent):
+            raise ConfigurationError(f"invalid Telegram agent id: {agent or '<empty>'}")
+        if not chat:
+            raise ConfigurationError(f"Telegram account {agent} requires a chat id")
+        accounts.append(
+            {
+                "agent": agent,
+                "token": token_key,
+                "chat": chat,
+                "default": boolean(
+                    environ,
+                    _telegram_key(environ, "OPENCLAW_TELEGRAM_DEFAULT", index),
+                    default=index == 1,
+                ),
+            }
+        )
+    names = [account["agent"] for account in accounts]
+    if len(names) != len(set(names)):
+        raise ConfigurationError("duplicate Telegram agent id")
+    if sum(account["default"] for account in accounts) > 1:
+        raise ConfigurationError("only one Telegram account may be default")
+    return tuple(accounts)
+
+
 def _main_agent_config(
     environ: Mapping[str, str],
     destination: Path,
     primary_model: str,
     model_allowlist: dict[str, dict[str, Any]],
+    telegram_accounts: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     workspace = workspace_path(environ, destination)
     agent_dir = agent_dir_path(environ, destination)
-    workspace.mkdir(parents=True, exist_ok=True)
-    agent_dir.mkdir(parents=True, exist_ok=True)
+    tools = {"allow": ["*"], "deny": []}
     defaults = {
         "workspace": str(workspace),
         "model": {"primary": primary_model},
         "models": model_allowlist,
         "sandbox": {"mode": "off"},
     }
-    main = {
-        "id": "main",
-        "name": "main",
-        "default": True,
-        "workspace": str(workspace),
-        "agentDir": str(agent_dir),
-        "heartbeat": {
-            "every": "360m",
-            "target": "last",
-            "directPolicy": "allow",
-        },
-        "tools": {"allow": ["*"], "deny": []},
-    }
-    return {"defaults": defaults, "list": [main]}
+    agents = []
+    names = dict.fromkeys(
+        ("main", *(account["agent"] for account in telegram_accounts))
+    )
+    for name in names:
+        current_workspace = (
+            workspace if name == "main" else workspace.parent / f"{workspace.name}-{name}"
+        )
+        current_agent_dir = (
+            agent_dir
+            if name == "main"
+            else agent_dir.parent.parent / name / "agent"
+        )
+        current_workspace.mkdir(parents=True, exist_ok=True)
+        current_agent_dir.mkdir(parents=True, exist_ok=True)
+        agents.append(
+            {
+                "id": name,
+                "name": name,
+                "default": name == "main",
+                "workspace": str(current_workspace),
+                "agentDir": str(current_agent_dir),
+                "heartbeat": {
+                    "every": "360m",
+                    "target": "last",
+                    "directPolicy": "allow",
+                },
+                "tools": tools,
+            }
+        )
+    return {"defaults": defaults, "list": agents}
 
 
-def _telegram_config(environ: Mapping[str, str]) -> dict[str, Any]:
-    if not clean(environ.get("OPENCLAW_TELEGRAMTOKEN")):
+def _telegram_config(accounts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    if not accounts:
         return {}
+    chats = list(dict.fromkeys(account["chat"] for account in accounts))
+    default = next(
+        (account["agent"] for account in accounts if account["default"]),
+        accounts[0]["agent"],
+    )
     telegram = {
         "enabled": True,
-        "dmPolicy": "open",
-        "allowFrom": ["*"],
+        "dmPolicy": "allowlist",
+        "allowFrom": chats,
         "groupPolicy": "open",
         "groupAllowFrom": ["*"],
         "groups": {"*": {"requireMention": False}},
@@ -426,7 +507,6 @@ def _telegram_config(environ: Mapping[str, str]) -> dict[str, Any]:
         "execApprovals": {
             "enabled": False,
             "approvers": [],
-            "agentFilter": ["main"],
             "target": "dm",
         },
         "network": {
@@ -434,25 +514,35 @@ def _telegram_config(environ: Mapping[str, str]) -> dict[str, Any]:
             "dnsResultOrder": "ipv4first",
         },
         "accounts": {
-            "default": {
-                "name": "main",
+            account["agent"]: {
+                "name": account["agent"],
                 "enabled": True,
-                "dmPolicy": "open",
-                "allowFrom": ["*"],
-                "botToken": secret_ref("OPENCLAW_TELEGRAMTOKEN"),
+                "dmPolicy": "allowlist",
+                "allowFrom": [account["chat"]],
+                "botToken": secret_ref(account["token"]),
                 "groupPolicy": "open",
                 "groupAllowFrom": ["*"],
+                "groups": {"*": {"requireMention": False}},
                 "streaming": {"mode": "partial"},
             }
+            for account in accounts
         },
-        "defaultAccount": "default",
+        "defaultAccount": default,
     }
-    config: dict[str, Any] = {"channels": {"telegram": telegram}}
-    owner = clean(environ.get("OPENCLAW_TELEGRAM_CHAT_ID"))
-    if owner:
-        owner_sender = owner if owner.startswith("telegram:") else f"telegram:{owner}"
-        config["commands"] = {"ownerAllowFrom": [owner_sender]}
-    return config
+    return {
+        "channels": {"telegram": telegram},
+        "commands": {"ownerAllowFrom": [f"telegram:{chat}" for chat in chats]},
+        "bindings": [
+            {
+                "agentId": account["agent"],
+                "match": {
+                    "channel": "telegram",
+                    "accountId": account["agent"],
+                },
+            }
+            for account in accounts
+        ],
+    }
 
 
 def _plugins_config(note_full_mode: bool) -> dict[str, Any]:
@@ -573,6 +663,7 @@ def build_config(
         explicit_model=explicit_model,
     )
 
+    telegram_accounts = _telegram_accounts(environ)
     config: dict[str, Any] = {
         "gateway": _gateway_config(environ, tailscale_runner=tailscale_runner),
         "agents": _main_agent_config(
@@ -580,6 +671,7 @@ def build_config(
             destination,
             primary_model,
             allowlist,
+            telegram_accounts,
         ),
         "plugins": _plugins_config(note_full_mode),
         "tools": _trusted_container_tools(),
@@ -600,7 +692,7 @@ def build_config(
     if custom_models:
         config["models"] = custom_models
     config.update(_hooks_config(environ))
-    config.update(_telegram_config(environ))
+    config.update(_telegram_config(telegram_accounts))
     return config, primary_model, note_full_mode
 
 
@@ -647,7 +739,6 @@ def configure(
         environ=injected,
         destination=destination,
     )
-
     secret_values = {
         clean(value)
         for name, value in injected.items()
@@ -656,10 +747,10 @@ def configure(
             name.endswith("_API_KEY")
             or name.startswith("OPENAI_V1_KEY")
             or name.startswith("MCP_SERVER_BEARER")
+            or name.startswith("OPENCLAW_TELEGRAMTOKEN")
             or name in {
                 "OPENCLAW_GATEWAY_TOKEN",
                 "OPENCLAW_HOOKS_TOKEN",
-                "OPENCLAW_TELEGRAMTOKEN",
             }
         )
     }
@@ -679,6 +770,10 @@ def configure(
             raise ConfigurationError(
                 f"cannot refresh the OpenClaw plugin registry: {exc}"
             ) from exc
+        config = json.loads(destination.read_text(encoding="utf-8"))
+        for agent in config["agents"]["list"]:
+            agent["tools"] = {"allow": ["*"], "deny": []}
+        atomic_write_json(destination, config)
 
     return ConfigurationResult(
         path=destination,
@@ -687,7 +782,7 @@ def configure(
         openai_v1_provider_count=len(providers),
         openai_v1_model_count=sum(len(provider.models) for provider in providers),
         mcp_server_count=len(mcp_servers),
-        telegram_configured=bool(clean(injected.get("OPENCLAW_TELEGRAMTOKEN"))),
+        telegram_configured="telegram" in config.get("channels", {}),
         note_full_mode=note_full_mode,
         warnings=(*native_warnings, *openai_warnings, *plugin_warnings),
         plugin_count=len(registered_plugins),
