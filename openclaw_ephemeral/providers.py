@@ -47,8 +47,8 @@ class OpenAIV1Provider:
     def openclaw_config(
         self,
         *,
-        context_window: int = 128_000,
-        max_tokens: int = 8_192,
+        context_window: int = 1_048_576,
+        max_tokens: int = 65_536,
     ) -> dict[str, Any]:
         """Return this provider's SecretRef-backed OpenClaw config."""
 

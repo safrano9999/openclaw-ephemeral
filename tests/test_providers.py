@@ -266,7 +266,10 @@ class OpenAIV1DiscoveryTests(unittest.TestCase):
         self.assertEqual(requests[1][2], "openclaw-ephemeral/1.0")
         self.assertTrue(all(response.closed for response in responses))
 
-        serialized = json.dumps(providers[0].openclaw_config())
+        config = providers[0].openclaw_config()
+        self.assertEqual(config["models"][0]["contextWindow"], 1_048_576)
+        self.assertEqual(config["models"][0]["maxTokens"], 65_536)
+        serialized = json.dumps(config)
         self.assertNotIn("first-secret", serialized)
         self.assertIn('"id": "OPENAI_V1_KEY"', serialized)
 
