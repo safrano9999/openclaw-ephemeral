@@ -55,40 +55,6 @@ def provider(
 
 
 class ConfigBuilderTests(unittest.TestCase):
-    def test_optional_embedding_groups_preserve_chat_defaults_and_secrets(self) -> None:
-        env = {
-            "OPENCLAW_EMBEDDING_NAME": "foobar",
-            "OPENCLAW_EMBEDDING_URL": "https://foobar.test/v1",
-            "OPENCLAW_EMBEDDING_MODEL": "embedding-a",
-            "OPENCLAW_EMBEDDING_BEARER": "",
-            "OPENCLAW_EMBEDDING_NAME_2": "second",
-            "OPENCLAW_EMBEDDING_URL_2": "https://second.test/v1",
-            "OPENCLAW_EMBEDDING_MODEL_2": "embedding-b",
-            "OPENCLAW_EMBEDDING_BEARER_2": "private-test-token",
-        }
-        with tempfile.TemporaryDirectory() as raw:
-            args = {"destination": Path(raw) / "openclaw.json", "openai_v1_providers": (provider(),)}
-            baseline = build_config({}, **args)
-            self.assertEqual(build_config(dict.fromkeys(env, ""), **args), baseline)
-            generated = build_config(env, **args)
-            self.assertEqual(generated, build_config(env, **args))
-        config = generated[0]
-        self.assertEqual(config["agents"], baseline[0]["agents"])
-        self.assertEqual(generated[1:], baseline[1:])
-        self.assertEqual(config["memory"], {"search": {"provider": "foobar", "model": "embedding-a"}})
-        providers = config["models"]["providers"]
-        self.assertEqual(providers["litellm"], baseline[0]["models"]["providers"]["litellm"])
-        self.assertNotIn("apiKey", providers["foobar"])
-        self.assertEqual(providers["second"]["models"][0]["id"], "embedding-b")
-        self.assertEqual(providers["second"]["apiKey"]["id"], "OPENCLAW_EMBEDDING_BEARER_2")
-        self.assertNotIn("private-test-token", json.dumps(config))
-        for invalid in ({"OPENCLAW_EMBEDDING_NAME": "LITELLM"},
-                        {"OPENCLAW_EMBEDDING_MODEL": ""},
-                        {"OPENCLAW_EMBEDDING_NAME_2": "FOOBAR"},
-                        {"OPENCLAW_EMBEDDING_URL": "ftp://foobar.test/v1"}):
-            with self.subTest(invalid=invalid), self.assertRaises(ConfigurationError):
-                build_config({**env, **invalid}, **args)
-
     def test_optional_default_model_controls_are_scoped_and_independent(self) -> None:
         cases = (
             ({}, {}),

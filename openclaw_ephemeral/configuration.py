@@ -652,47 +652,6 @@ def _trusted_container_tools() -> dict[str, Any]:
     }
 
 
-def _embedding_config(environ: Mapping[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Read the optional example groups; the first supplies global memory search."""
-
-    providers: dict[str, Any] = {}
-    search: dict[str, Any] = {}
-    for index in range(1, 51):
-        suffix = "" if index == 1 else f"_{index}"
-        prefix = "OPENCLAW_EMBEDDING_"
-        values = {field: clean(environ.get(f"{prefix}{field}{suffix}"))
-                  for field in ("NAME", "URL", "MODEL", "BEARER")}
-        if not values["URL"]:
-            continue
-        name = values["NAME"].lower()
-        if not SAFE_MCP_SERVER_NAME.fullmatch(name) or not values["MODEL"]:
-            raise ConfigurationError(f"Embedding group {index} needs a valid name and model")
-        if name in providers:
-            raise ConfigurationError(f"Duplicate embedding provider name: {name}")
-        try:
-            url = urlsplit(values["URL"])
-            valid = (url.scheme in {"http", "https"} and bool(url.hostname)
-                     and (url.port is None or 1 <= url.port <= 65535)
-                     and url.username is None and url.password is None
-                     and not url.query and not url.fragment)
-        except ValueError:
-            valid = False
-        if not valid:
-            raise ConfigurationError(f"Embedding group {index} needs an HTTP(S) API base URL")
-        bearer = values["BEARER"]
-        if bearer.lower().startswith("bearer ") or "\r" in bearer or "\n" in bearer:
-            raise ConfigurationError(f"Embedding group {index} bearer must contain only the token")
-        providers[name] = {
-            "baseUrl": values["URL"].rstrip("/"), "api": "openai-completions",
-            "models": [{"id": values["MODEL"], "name": values["MODEL"]}],
-        }
-        if bearer:
-            providers[name]["apiKey"] = secret_ref(f"{prefix}BEARER{suffix}")
-        if not search:
-            search = {"provider": name, "model": values["MODEL"]}
-    return providers, search
-
-
 def _models_config(
     providers: Sequence[OpenAIV1Provider],
 ) -> dict[str, Any]:
@@ -808,17 +767,6 @@ def build_config(
             }
         }
     custom_models = _models_config(providers)
-    embedding_providers, memory_search = _embedding_config(environ)
-    if embedding_providers:
-        custom_models.setdefault("mode", "merge")
-        model_providers = custom_models.setdefault("providers", {})
-        collisions = {name.lower() for name in model_providers} & embedding_providers.keys()
-        if collisions:
-            raise ConfigurationError(
-                f"Embedding provider name conflicts with an LLM provider: {sorted(collisions)[0]}"
-            )
-        model_providers.update(embedding_providers)
-        config["memory"] = {"search": memory_search}
     if custom_models:
         config["models"] = custom_models
     config.update(_hooks_config(environ))
@@ -888,7 +836,6 @@ def configure(
             name.endswith("_API_KEY")
             or name.startswith("OPENAI_V1_KEY")
             or name.startswith("MCP_SERVER_BEARER")
-            or name.startswith("OPENCLAW_EMBEDDING_BEARER")
             or name.startswith("OPENCLAW_TELEGRAMTOKEN")
             or name in {
                 "OPENCLAW_GATEWAY_TOKEN",
