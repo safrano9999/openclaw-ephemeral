@@ -119,6 +119,32 @@ catalog headers; it cannot replace the generated bearer authorization.
 `OPENAI_V1_MODELS` accepts a JSON array or comma-separated model ids and is
 merged with discovery results, or used as a fallback when `/models` is not
 available. Neither option depends on a provider name.
+
+### Memory embeddings
+
+Optional `OPENCLAW_EMBEDDING_NAME`, `OPENCLAW_EMBEDDING_URL`,
+`OPENCLAW_EMBEDDING_MODEL`, and `OPENCLAW_EMBEDDING_BEARER` groups configure
+memory embeddings independently of chat providers. Repeated groups use `_2`,
+`_3`, up to `_50`. A blank URL disables a group; an enabled group requires a
+unique provider name and an explicit model. The URL is the API base including
+`/v1` when required. The bearer is an optional token without the `Bearer` prefix.
+
+```text
+OPENCLAW_EMBEDDING_NAME=nous-embeddings
+OPENCLAW_EMBEDDING_URL=https://inference-api.nousresearch.com/v1
+OPENCLAW_EMBEDDING_MODEL=openai/text-embedding-3-small
+OPENCLAW_EMBEDDING_BEARER=your-token
+```
+
+Every configuration rebuild emits one explicit model per embedding provider
+and selects the first URL-enabled group for global `memory.search`. Tokens
+remain environment SecretRefs. These endpoints are never queried for a chat
+model catalog, and their models are excluded from the generated chat allowlist
+and default-model selection. Names must differ from configured chat providers.
+No additional embedding init hook is needed in images containing this support.
+
+### Gateway and channels
+
 Gateway and Telegram configuration use `OPENCLAW_GATEWAY_*` and
 `OPENCLAW_TELEGRAMTOKEN`. `OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS` supplies the
 fixed base for `gateway.controlUi.allowedOrigins`; it accepts comma-separated
