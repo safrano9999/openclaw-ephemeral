@@ -790,6 +790,7 @@ def build_config(
     telegram_accounts = _telegram_accounts(environ)
     config: dict[str, Any] = {
         "gateway": _gateway_config(environ, tailscale_runner=tailscale_runner),
+        "browser": {"noSandbox": True},
         "agents": _main_agent_config(
             environ,
             destination,

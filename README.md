@@ -59,6 +59,9 @@ configurations retain `main` as the owner of system work and Talk, with the
 existing Telegram account routes and a `main` fallback. Session stores remain
 scoped to their agents.
 
+Every configuration rebuild sets `browser.noSandbox=true` so Chromium can run
+as root inside the container.
+
 Each Telegram account can set `OPENCLAW_TELEGRAM_HEARTBEAT_MINUTES` (and
 `_02`, `_03`, etc. for repeated accounts). The setup preset and runtime default
 are `0`, which disables scheduled heartbeats using OpenClaw's `every: "0m"`.
