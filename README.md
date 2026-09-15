@@ -156,6 +156,13 @@ the actual proxy peers, which must overwrite or safely rebuild forwarded
 client headers. This setting does not enable trusted-proxy authentication or
 replace the gateway token and browser device pairing.
 
+Optional memory embeddings use `OPENCLAW_EMBEDDING_NAME`, `_URL`, `_MODEL`,
+and `_BEARER`, with the existing `new`/`skip` groups and `_2`, `_3`, etc.
+An empty URL skips the group. The first active group becomes the global memory
+default; chat defaults stay unchanged. An empty bearer omits authentication;
+otherwise the token is stored as an environment reference. Use a full HTTP(S)
+API base URL, including `/v1` when applicable.
+
 Optional HTTP MCP servers use repeatable groups:
 
 ```text
