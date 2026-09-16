@@ -572,6 +572,7 @@ def _telegram_config(accounts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     )
     telegram = {
         "enabled": True,
+        "configWrites": True,
         "dmPolicy": "allowlist",
         "allowFrom": chats,
         "groupPolicy": "open",
@@ -619,7 +620,7 @@ def _telegram_config(accounts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         })
     return {
         "channels": {"telegram": telegram},
-        "commands": {"ownerAllowFrom": [f"telegram:{chat}" for chat in chats]},
+        "commands": {"config": True, "ownerAllowFrom": [f"telegram:{chat}" for chat in chats]},
         "bindings": bindings,
     }
 
@@ -632,7 +633,7 @@ def _plugins_config(note_full_mode: bool) -> dict[str, Any]:
         note["hooks"] = {"allowConversationAccess": True}
     return {
         "entries": {
-            "codex": {"enabled": True},
+            "codex": {"enabled": True, "config": {"discovery": {"timeoutMs": 10_000}}},
             "note": note,
         }
     }

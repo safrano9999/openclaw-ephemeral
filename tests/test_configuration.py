@@ -289,6 +289,7 @@ class ConfigBuilderTests(unittest.TestCase):
                 },
             )
             self.assertTrue(config["plugins"]["entries"]["codex"]["enabled"])
+            self.assertEqual(config["plugins"]["entries"]["codex"]["config"]["discovery"]["timeoutMs"], 10000)
 
     def test_note_full_mode_can_be_disabled_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -472,6 +473,8 @@ class ConfigBuilderTests(unittest.TestCase):
                 ["https://control.example.test", "http://localhost:19000"],
             )
             telegram = config["channels"]["telegram"]
+            self.assertTrue(telegram["configWrites"])
+            self.assertTrue(config["commands"]["config"])
             self.assertEqual(
                 telegram["accounts"]["main"]["botToken"]["id"],
                 "OPENCLAW_TELEGRAMTOKEN",
