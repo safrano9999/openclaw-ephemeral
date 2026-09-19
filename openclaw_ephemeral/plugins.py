@@ -41,6 +41,32 @@ class OpenClawPlugin:
     hook_path: str | None
 
 
+def _image_npm_location(record: Mapping[str, Any], state_root: Path) -> tuple[dict[str, Any], Path | None]:
+    """Address an image-owned npm project through the active state's npm root."""
+
+    if record.get("source") != "npm":
+        return dict(record), None
+    installed = Path(record["installPath"])
+    image_root = next((parent for parent in installed.parents
+                       if parent.name == "npm" and installed.relative_to(parent).parts[0] == "projects"), None)
+    if image_root is None or image_root == state_root / "npm":
+        return dict(record), None
+    return {**record, "installPath": str(state_root / "npm" / installed.relative_to(image_root))}, image_root
+
+
+def _ensure_image_npm_alias(state_root: Path, image_root: Path) -> None:
+    """Retain image artifacts without replacing an operator's managed npm tree."""
+
+    alias = state_root / "npm"
+    if alias.is_symlink():
+        if alias.resolve(strict=True) == image_root.resolve(strict=True):
+            return
+        raise ConfigurationError("active npm root points to a different plugin installation")
+    if alias.exists():
+        raise ConfigurationError("active npm root is operator-owned; refusing to replace it with image plugins")
+    alias.symlink_to(image_root, target_is_directory=True)
+
+
 def restore_image_plugin_installs(
     environ: Mapping[str, str],
     *,
@@ -49,7 +75,8 @@ def restore_image_plugin_installs(
 ) -> None:
     """Reconcile image plugin records after mounting an older persistent ledger."""
 
-    database_path = state_dir_path(environ, destination) / "state" / "openclaw.sqlite"
+    state_root = state_dir_path(environ, destination)
+    database_path = state_root / "state" / "openclaw.sqlite"
     if not seed_path.is_file() or not database_path.is_file():
         return
     try:
@@ -84,11 +111,16 @@ def restore_image_plugin_installs(
                 changed = False
                 for plugin_id, record in matching.items():
                     previous = records.get(plugin_id)
+                    active_record, image_npm_root = _image_npm_location(record, state_root)
                     # Keep an operator's installation at a different path.
-                    if previous and previous.get("installPath") != record["installPath"]:
+                    if previous and previous.get("installPath") not in {
+                        record["installPath"], active_record["installPath"],
+                    }:
                         continue
-                    if previous != record:
-                        records[plugin_id] = record
+                    if image_npm_root is not None:
+                        _ensure_image_npm_alias(state_root, image_npm_root)
+                    if previous != active_record:
+                        records[plugin_id] = active_record
                         changed = True
                 if changed:
                     ledger["revision"] += 1

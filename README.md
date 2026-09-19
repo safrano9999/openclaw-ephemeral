@@ -78,6 +78,13 @@ does not run Doctor automatically. The trusted policy command continues to
 update OpenClaw's canonical approval store; inspect its effective behavior with
 `openclaw exec-policy show --json`.
 
+With a separate persistent `OPENCLAW_STATE_DIR`, image-owned npm plugins stay
+in the image. Bootstrap links the state's `npm` root to that image tree and
+reconciles only the matching image install records to the active path. This
+keeps OpenClaw's registry ownership checks and image-version updates consistent.
+An existing operator-owned npm tree or a link to another installation is never
+replaced. Keep `OPENCLAW_CONFIG_PATH` on the ephemeral generated configuration.
+
 Only `run` scans runtime hooks:
 
 ```text

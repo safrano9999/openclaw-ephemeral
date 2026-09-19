@@ -18,6 +18,83 @@ from openclaw_ephemeral.plugins import (
 
 
 class ManagedPluginDiscoveryTests(unittest.TestCase):
+    def npm_fixture(self, root: Path):
+        state = root / "persistent"
+        source = root / "image" / "npm"
+        package = source / "projects" / "example" / "node_modules" / "example"
+        package.mkdir(parents=True)
+        (package / "openclaw.plugin.json").write_text('{"id":"example"}')
+        (package / "package.json").write_text('{"version":"2"}')
+        record = {"source":"npm", "installPath":str(package), "version":"2", "integrity":"verified-image-digest"}
+        seed = root / "seed.json"
+        seed.write_text(json.dumps({"schemaVersion":1,"installRecords":{"example":record}}))
+        database_path = state / "state" / "openclaw.sqlite"
+        database_path.parent.mkdir(parents=True)
+        with sqlite3.connect(database_path) as database:
+            database.execute("CREATE TABLE config_machine_state (state_key TEXT PRIMARY KEY, value_json TEXT)")
+            database.execute("INSERT INTO config_machine_state VALUES (?, ?)", (
+                "plugins.installedIndex", json.dumps({"revision":1,"index":{"installRecords":{"example":{**record,"version":"1"}}}})))
+            database.execute("INSERT INTO config_machine_state VALUES ('private-state', 'preserve-me')")
+        return state, source, package, seed, database_path
+
+    def test_image_npm_records_follow_state_root_and_next_image_version(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            state, source, package, seed, database_path = self.npm_fixture(root)
+            def restore():
+                restore_image_plugin_installs({"OPENCLAW_STATE_DIR":str(state)}, destination=root/'config/openclaw.json', seed_path=seed)
+                with sqlite3.connect(database_path) as database:
+                    rows = dict(database.execute("SELECT state_key,value_json FROM config_machine_state"))
+                self.assertEqual(rows['private-state'], 'preserve-me')
+                return json.loads(rows['plugins.installedIndex'])
+            first = restore()
+            self.assertEqual((state/'npm').resolve(), source)
+            record = first['index']['installRecords']['example']
+            self.assertEqual(record['installPath'], str(state/'npm'/package.relative_to(source)))
+            self.assertEqual(record['integrity'], 'verified-image-digest')
+            self.assertEqual(first['revision'], 2)
+            self.assertEqual(restore(), first)
+            payload = json.loads(seed.read_text())
+            payload['installRecords']['example']['version'] = '3'
+            seed.write_text(json.dumps(payload))
+            (package/'package.json').write_text('{"version":"3"}')
+            updated = restore()
+            self.assertEqual(updated['index']['installRecords']['example']['version'], '3')
+            self.assertEqual(updated['revision'], 3)
+
+    def test_image_npm_reconciliation_refuses_operator_tree_or_foreign_alias(self):
+        for foreign_alias in (False, True):
+            with self.subTest(foreign_alias=foreign_alias), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                state, source, package, seed, database_path = self.npm_fixture(root)
+                operator = root/'operator'
+                operator.mkdir()
+                if foreign_alias:
+                    (state/'npm').symlink_to(operator, target_is_directory=True)
+                else:
+                    (state/'npm').mkdir()
+                original = database_path.read_bytes()
+                with self.assertRaises(ConfigurationError):
+                    restore_image_plugin_installs({"OPENCLAW_STATE_DIR":str(state)}, destination=root/'config/openclaw.json', seed_path=seed)
+                self.assertEqual(database_path.read_bytes(), original)
+                self.assertEqual((state/'npm').is_symlink(), foreign_alias)
+                if foreign_alias:
+                    self.assertEqual((state/'npm').resolve(), operator)
+
+    def test_operator_plugin_install_is_preserved_without_creating_alias(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            state, source, package, seed, database_path = self.npm_fixture(root)
+            operator_record = {'source':'npm','installPath':str(root/'operator'),'version':'custom'}
+            ledger = {'revision':5,'index':{'installRecords':{'example':operator_record}}}
+            with sqlite3.connect(database_path) as database:
+                database.execute("UPDATE config_machine_state SET value_json=? WHERE state_key='plugins.installedIndex'", (json.dumps(ledger),))
+            restore_image_plugin_installs({"OPENCLAW_STATE_DIR":str(state)}, destination=root/'config/openclaw.json', seed_path=seed)
+            self.assertFalse((state/'npm').is_symlink())
+            with sqlite3.connect(database_path) as database:
+                actual=json.loads(database.execute("SELECT value_json FROM config_machine_state WHERE state_key='plugins.installedIndex'").fetchone()[0])
+            self.assertEqual(actual,ledger)
+
     def test_image_upgrade_refreshes_plugin_metadata_and_preserves_private_state(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
