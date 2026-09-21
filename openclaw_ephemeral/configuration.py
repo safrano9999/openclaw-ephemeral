@@ -511,6 +511,8 @@ def _main_agent_config(
             raise ConfigurationError("OPENCLAW_MODEL_THINKING must be a supported thinking level")
         model_params["thinking"] = thinking
     if model_params:
+        if not primary_model:
+            raise ConfigurationError("Set OPENCLAW_MODEL to configure default model parameters")
         model_allowlist.setdefault(primary_model, {})["params"] = model_params
     defaults = {
         "workspace": str(workspace),
@@ -526,6 +528,11 @@ def _main_agent_config(
         },
         "sandbox": {"mode": "off"},
     }
+    if not primary_model:
+        del defaults["model"]
+    if not model_allowlist:
+        del defaults["models"]
+        del defaults["modelPolicy"]
     agents = {}
     names = dict.fromkeys(
         ("main", *(account["agent"] for account in telegram_accounts))
@@ -718,10 +725,7 @@ def _model_allowlist(
     providers: Sequence[OpenAIV1Provider],
     explicit_model: str = "",
 ) -> dict[str, dict[str, Any]]:
-    models: dict[str, dict[str, Any]] = {
-        DUMMY_MODEL: {},
-        NOTE_MODEL: {},
-    }
+    models: dict[str, dict[str, Any]] = {}
     for model in sorted(set(native_models)):
         models[model] = {}
     for provider in providers:
@@ -766,7 +770,9 @@ def build_config(
     requested_note_full_mode = boolean(
         environ,
         "OPENCLAW_NOTE_FULL_MODE",
-        default=boolean(environ, "NOTE_FULL_MODE", default=True),
+        default=boolean(environ, "NOTE_FULL_MODE", default=(
+            DUMMY_MODEL in native_models and NOTE_MODEL in native_models
+        )),
     )
     explicit_model = clean(environ.get("OPENCLAW_MODEL"))
     note_full_mode = requested_note_full_mode or explicit_model == NOTE_MODEL
@@ -780,12 +786,14 @@ def build_config(
     if explicit_custom is not None:
         _, providers = explicit_custom
     primary_model = explicit_model or custom_primary or (
-        NOTE_MODEL if requested_note_full_mode else DUMMY_MODEL
+        NOTE_MODEL if requested_note_full_mode else (
+            DUMMY_MODEL if DUMMY_MODEL in native_models else ""
+        )
     )
     allowlist = _model_allowlist(
         native_models,
         providers,
-        explicit_model=explicit_model,
+        explicit_model=primary_model,
     )
 
     telegram_accounts = _telegram_accounts(environ)

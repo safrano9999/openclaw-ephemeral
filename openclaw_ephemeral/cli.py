@@ -63,7 +63,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _report(result: ConfigurationResult, stream: Any) -> None:
     print(f"OpenClaw config rebuilt atomically: {result.path}", file=stream)
-    print(f"OpenClaw primary model: {result.primary_model}", file=stream)
+    print(f"OpenClaw primary model: {result.primary_model or 'OpenClaw default'}", file=stream)
     print(
         "OpenClaw models discovered: "
         f"{result.native_model_count} native, "

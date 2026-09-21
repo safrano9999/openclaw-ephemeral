@@ -202,9 +202,6 @@ def discover_native_models(
         for name, value in environ.items()
         if name.endswith("_API_KEY") and clean(value)
     }
-    if not configured_keys:
-        return (), ()
-
     warnings: list[str] = []
     models: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="openclaw-ephemeral-discovery-") as raw_dir:
@@ -241,7 +238,7 @@ def discover_native_models(
             environ=isolated,
             runner=runner,
             timeout=command_timeout,
-        )
+        ) if configured_keys else {}
         auth = status.get("auth", {}) if isinstance(status, Mapping) else {}
         provider_rows = auth.get("providers", []) if isinstance(auth, Mapping) else []
         providers: set[str] = set()
@@ -265,7 +262,9 @@ def discover_native_models(
                 "OpenClaw did not recognize any injected *_API_KEY provider"
             )
 
-        for provider in sorted(providers):
+        # The optional local routes need no credentials. Ask the installed
+        # OpenClaw catalog whether they exist, including on an unpatched release.
+        for provider in sorted(providers | {"dummy"}):
             catalog = _run_openclaw_json(
                 ("models", "list", "--all", "--provider", provider, "--json"),
                 environ=isolated,
@@ -277,8 +276,10 @@ def discover_native_models(
                 for row in _catalog_rows(catalog)
                 if row.get("available") is True and row.get("missing") is False
             } - {""}
+            if provider == "dummy":
+                available_models.intersection_update({"dummy/dummy", "dummy/note"})
             models.update(available_models)
-            if not available_models:
+            if not available_models and provider != "dummy":
                 warnings.append(
                     f"OpenClaw did not discover available models for provider {provider}"
                 )

@@ -2,18 +2,14 @@
 FROM ghcr.io/openclaw/openclaw:2026.9.2
 
 ARG OPENCLAW_VERSION=2026.9.2
-ARG OPENCLAW_DETERMINISTIC_TAG=2026.9.2-deterministic.3
-ARG OPENCLAW_DETERMINISTIC_ASSET=openclaw-2026.9.2-deterministic.tar.gz
-ARG OPENCLAW_DETERMINISTIC_SHA256=bcf634bf6193c1f855e35a48ab7e858768c932d8e9a43464f7ae8091d7adb872
 ARG NOTE_RELEASE_TAG=2026.7.36
 ARG NOTE_RELEASE_SHA256=2d3a4bff771e9dd85b6d39c0a1bb63dd68f99f65d73c6d2caae29eb65a6ba26b
 
 LABEL org.opencontainers.image.title="openclaw-ephemeral" \
-      org.opencontainers.image.description="OpenClaw with the deterministic patch, NOTE, and a fresh environment-derived configuration at every start." \
+      org.opencontainers.image.description="OpenClaw with NOTE and a fresh environment-derived configuration at every start." \
       org.opencontainers.image.source="https://github.com/safrano9999/openclaw-ephemeral" \
       org.opencontainers.image.version="${OPENCLAW_VERSION}" \
       io.safrano9999.openclaw.version="${OPENCLAW_VERSION}" \
-      io.safrano9999.openclaw-deterministic.release="${OPENCLAW_DETERMINISTIC_TAG}" \
       io.safrano9999.note.release="${NOTE_RELEASE_TAG}"
 
 USER root
@@ -22,14 +18,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl python3 \
  && rm -rf /var/lib/apt/lists/*
-
-COPY container/build/install-openclaw-deterministic.sh /usr/local/lib/openclaw-ephemeral/install-openclaw-deterministic.sh
-RUN chmod 0755 /usr/local/lib/openclaw-ephemeral/install-openclaw-deterministic.sh \
- && OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
-    OPENCLAW_DETERMINISTIC_TAG="${OPENCLAW_DETERMINISTIC_TAG}" \
-    OPENCLAW_DETERMINISTIC_ASSET="${OPENCLAW_DETERMINISTIC_ASSET}" \
-    OPENCLAW_DETERMINISTIC_SHA256="${OPENCLAW_DETERMINISTIC_SHA256}" \
-    /usr/local/lib/openclaw-ephemeral/install-openclaw-deterministic.sh
 
 ENV HOME=/root \
     OPENCLAW_CONFIG_DIR=/root/.openclaw \

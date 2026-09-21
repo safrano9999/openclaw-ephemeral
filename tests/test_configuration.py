@@ -55,6 +55,38 @@ def provider(
 
 
 class ConfigBuilderTests(unittest.TestCase):
+    def test_unpatched_runtime_does_not_invent_deterministic_models(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, primary, full_mode = build_config(
+                {"HOME": raw}, destination=Path(raw) / "openclaw.json",
+                native_models=("anthropic/claude-a",),
+            )
+        self.assertEqual(primary, "")
+        self.assertFalse(full_mode)
+        self.assertNotIn("model", config["agents"]["defaults"])
+        self.assertEqual(config["agents"]["defaults"]["models"], {"anthropic/claude-a": {}})
+
+    def test_empty_catalog_keeps_upstream_model_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, primary, full_mode = build_config(
+                {"HOME": raw}, destination=Path(raw) / "openclaw.json",
+            )
+        self.assertEqual(primary, "")
+        self.assertFalse(full_mode)
+        defaults = config["agents"]["defaults"]
+        for name in ("model", "models", "modelPolicy"):
+            self.assertNotIn(name, defaults)
+
+    def test_note_plugin_alone_does_not_imply_deterministic_core(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, primary, full_mode = build_config(
+                {"HOME": raw}, destination=Path(raw) / "openclaw.json",
+                native_models=(NOTE_MODEL,),
+            )
+        self.assertEqual(primary, "")
+        self.assertFalse(full_mode)
+        self.assertEqual(config["agents"]["defaults"]["models"], {NOTE_MODEL: {}})
+
     def test_optional_default_model_controls_are_scoped_and_independent(self) -> None:
         cases = (
             ({}, {}),
@@ -237,6 +269,7 @@ class ConfigBuilderTests(unittest.TestCase):
                     "OPENCLAW_AGENT_WORKSPACE": str(root / "workspace"),
                 },
                 destination=destination,
+                native_models=(DUMMY_MODEL, NOTE_MODEL),
             )
 
             self.assertEqual(primary, NOTE_MODEL)
@@ -300,6 +333,7 @@ class ConfigBuilderTests(unittest.TestCase):
                     "OPENCLAW_NOTE_FULL_MODE": "0",
                 },
                 destination=destination,
+                native_models=(DUMMY_MODEL, NOTE_MODEL),
             )
 
             self.assertFalse(full_mode)
@@ -333,8 +367,6 @@ class ConfigBuilderTests(unittest.TestCase):
             self.assertEqual(primary, "second/model-c")
             allowlist = config["agents"]["defaults"]["models"]
             for model in (
-                DUMMY_MODEL,
-                NOTE_MODEL,
                 "anthropic/claude-a",
                 "gemini/gemini-b",
                 "litellm/model-a",
@@ -365,7 +397,7 @@ class ConfigBuilderTests(unittest.TestCase):
         self.assertIn("selected", defaults["models"])
         self.assertEqual(
             defaults["modelPolicy"]["allow"],
-            [DUMMY_MODEL, NOTE_MODEL, "litellm/selected", "litellm/other"],
+            ["litellm/selected", "litellm/other"],
         )
 
     def test_openclaw_model_overrides_openai_v1_default_and_is_allowlisted(self) -> None:
@@ -374,6 +406,7 @@ class ConfigBuilderTests(unittest.TestCase):
                 {
                     "HOME": raw,
                     "OPENCLAW_MODEL": "anthropic/claude-explicit",
+                    "OPENCLAW_NOTE_FULL_MODE": "1",
                     "OPENCLAW_OPENAI_V1_DEFAULT_LLM": "litellm/model-a",
                 },
                 destination=Path(raw) / "openclaw.json",

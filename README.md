@@ -8,6 +8,19 @@ The repository is centered on the executable `openclaw-ephemeral.py`, the
 `openclaw_ephemeral` package, and their tests. Container packaging is optional
 and isolated below `container/`.
 
+Deterministic is an independent optional input to the parent image. Ephemeral
+does not download, patch, build, or replace OpenClaw's `dist` directory. In the
+Fedora Core recipe, the Deterministic archive is installed first and Ephemeral's
+Python/runtime files are installed in a separate second step.
+
+Models come from OpenClaw's discovered catalog and explicit provider/model
+configuration. Discovery checks the installed local model catalog even without API keys.
+When both deterministic routes are discovered, the existing NOTE
+default applies; when only `dummy/dummy` is discovered it is the fallback.
+Without those routes, Ephemeral leaves the primary model to OpenClaw unless
+`OPENCLAW_MODEL` or a custom-provider default selects one. An explicit
+`OPENCLAW_NOTE_FULL_MODE` / `NOTE_FULL_MODE` request still takes precedence.
+
 ## Python runtime
 
 ```text
@@ -277,16 +290,15 @@ The optional image target is
 This migration does not build or publish it. Its pinned components are:
 
 - `ghcr.io/openclaw/openclaw:2026.9.2`
-- [`openclaw-deterministic-latest` release `2026.9.2-deterministic.2`](https://github.com/safrano9999/openclaw-deterministic-latest/releases/tag/2026.9.2-deterministic.2)
 - [NOTE release ZIP `2026.7.36`](https://github.com/safrano9999/NOTE/releases/tag/2026.7.36)
 - this repository's environment-driven Python runtime
 
-The external archives are downloaded from their pinned releases and verified
-by SHA-256. The build requires `OPENCLAW_DETERMINISTIC_SHA256` from the verified
-new release; no previous release digest is reused. The archives are not
-vendored here. The image defaults to `dummy/note`;
-`dummy/dummy`, native providers, and OpenAI-v1 compatible providers remain
-available.
+The NOTE archive is downloaded from its pinned release and verified by SHA-256.
+Deterministic is not embedded by this image recipe. To use the deterministic
+routes, compose the matching Deterministic archive into the OpenClaw base
+before adding Ephemeral, as the Fedora Core recipe does. Otherwise configure a
+native or OpenAI-v1 compatible model. No Deterministic release pin or installer
+is maintained in this repository.
 
 The container runs as `root`, matching the existing Safrano and Fedora
 OpenClaw images.

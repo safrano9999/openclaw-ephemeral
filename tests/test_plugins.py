@@ -180,6 +180,8 @@ class ManagedPluginDiscoveryTests(unittest.TestCase):
             calls = []
 
             def runner(command, **_kwargs):
+                if "models" in command:
+                    return subprocess.CompletedProcess(command, 0, stdout='{"models":[]}', stderr="")
                 calls.append(command)
                 current = json.loads(destination.read_text(encoding="utf-8"))
                 # OpenClaw config writes persist keyed entries, never its internal list projection.

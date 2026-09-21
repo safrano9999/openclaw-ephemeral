@@ -103,7 +103,7 @@ class NativeProviderDiscoveryTests(unittest.TestCase):
                     }
                 ],
             }
-            return Completed(stdout=json.dumps({"models": rows[provider]}))
+            return Completed(stdout=json.dumps({"models": rows.get(provider, [])}))
 
         models, warnings = discover_native_models(
             {
@@ -121,7 +121,7 @@ class NativeProviderDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(warnings, ())
         self.assertEqual(calls[0][0][:2], ["node", "/app/openclaw.mjs"])
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 4)
 
     def test_auth_source_shapes_require_an_exact_injected_environment_id(self) -> None:
         cases = (
@@ -155,7 +155,7 @@ class NativeProviderDiscoveryTests(unittest.TestCase):
                     {"PROVIDED_API_KEY": "synthetic-secret"}, runner=runner,
                 )
                 self.assertEqual(models, ("provided/model",) if recognized else ())
-                self.assertEqual(catalog_calls, ["provided"] if recognized else [])
+                self.assertEqual(catalog_calls, ["dummy", "provided"] if recognized else ["dummy"])
                 self.assertEqual(bool(warnings), not recognized)
                 self.assertNotIn("synthetic-secret", str(warnings))
 
@@ -234,6 +234,8 @@ class NativeProviderDiscoveryTests(unittest.TestCase):
         def runner(command: list[str], **_kwargs: Any) -> Completed:
             if "status" in command:
                 return Completed(stdout='{"auth":{"providers":[]}}')
+            if command[command.index("--provider") + 1] == "dummy":
+                return Completed(stdout='{"models":[]}')
             self.assertEqual(command[command.index("--provider") + 1], "sakana")
             return Completed(stdout=json.dumps({"models": [{
                 "key": "sakana/test-model", "available": True, "missing": False,
@@ -277,14 +279,20 @@ class NativeProviderDiscoveryTests(unittest.TestCase):
             self.assertEqual(models, ("managed/model",))
             self.assertEqual(warnings, ())
 
-    def test_no_keys_means_no_cli_process(self) -> None:
-        def runner(_command: list[str], **_kwargs: Any) -> Completed:
-            self.fail("runner must not be called without an injected API key")
+    def test_credential_free_catalog_discovers_only_installed_local_routes(self) -> None:
+        for installed in ((), ("dummy/dummy", "dummy/note")):
+            with self.subTest(installed=installed):
+                calls = []
+                def runner(command: list[str], **kwargs: Any) -> Completed:
+                    calls.append(command)
+                    self.assertEqual(command[-6:], ["models", "list", "--all", "--provider", "dummy", "--json"])
+                    self.assertTrue(Path(kwargs["env"]["OPENCLAW_CONFIG_PATH"]).is_file())
+                    return Completed(stdout=json.dumps({"models": [
+                        {"key": key, "available": True, "missing": False} for key in installed
+                    ]}))
+                self.assertEqual(discover_native_models({}, runner=runner), (installed, ()))
+                self.assertEqual(len(calls), 1)
 
-        self.assertEqual(discover_native_models({}, runner=runner), ((), ()))
-
-
-class OpenAIV1DiscoveryTests(unittest.TestCase):
     def test_url_normalization_adds_v1_and_handles_ports(self) -> None:
         self.assertEqual(
             normalize_openai_v1_url("localhost", "4000"),
