@@ -498,6 +498,7 @@ def _main_agent_config(
     primary_model: str,
     model_allowlist: dict[str, dict[str, Any]],
     telegram_accounts: Sequence[Mapping[str, Any]],
+    fallback_models: Sequence[str] = (),
 ) -> dict[str, Any]:
     workspace = workspace_path(environ, destination)
     agent_dir = agent_dir_path(environ, destination)
@@ -516,7 +517,10 @@ def _main_agent_config(
         model_allowlist.setdefault(primary_model, {})["params"] = model_params
     defaults = {
         "workspace": str(workspace),
-        "model": {"primary": primary_model},
+        "model": {
+            "primary": primary_model,
+            **({"fallbacks": list(fallback_models)} if fallback_models else {}),
+        },
         "models": model_allowlist,
         # Bare primary names resolve through the qualified provider catalog; the
         # explicit override policy accepts qualified refs and OpenRouter selectors.
@@ -777,11 +781,49 @@ def build_config(
     explicit_model = clean(environ.get("OPENCLAW_MODEL"))
     note_full_mode = requested_note_full_mode or explicit_model == NOTE_MODEL
     providers = tuple(openai_v1_providers)
-    configured_default = clean(environ.get("OPENCLAW_OPENAI_V1_DEFAULT_LLM"))
-    selected = select_openai_v1_default(providers, configured_default)
+    fallback_models: tuple[str, ...] = ()
     custom_primary = ""
-    if selected is not None:
-        custom_primary, providers = selected
+    configured_provider = clean(environ.get("OPENCLAW_DEFAULT_PROVIDER"))
+    configured_model = clean(environ.get("OPENCLAW_DEFAULT_LLM"))
+    if configured_provider or configured_model:
+        if not configured_provider or not configured_model:
+            raise ConfigurationError(
+                "OPENCLAW_DEFAULT_PROVIDER and OPENCLAW_DEFAULT_LLM must be set together"
+            )
+        if configured_provider.lower() == "chatgpt":
+            custom_primary = f"openai/{configured_model}"
+        else:
+            selected = select_openai_v1_default(
+                providers, f"{configured_provider}/{configured_model}"
+            )
+            if selected is None:
+                raise ConfigurationError("OpenClaw could not select the configured default model")
+            custom_primary, providers = selected
+        fallbacks: list[str] = []
+        for index in range(1, 51):
+            suffix = "" if index == 1 else f"_{index:02d}"
+            provider = clean(environ.get(f"OPENCLAW_FALLBACK_PROVIDER{suffix}"))
+            model = clean(environ.get(f"OPENCLAW_FALLBACK_LLM{suffix}"))
+            if not provider and not model:
+                continue
+            if not provider or not model:
+                raise ConfigurationError(f"OpenClaw fallback {index:02d} must be a complete pair")
+            if provider.lower() == "chatgpt":
+                fallbacks.append(f"openai/{model}")
+            else:
+                selected = select_openai_v1_default(providers, f"{provider}/{model}")
+                if selected is None:
+                    raise ConfigurationError(f"OpenClaw could not select fallback {index:02d}")
+                qualified, providers = selected
+                fallbacks.append(qualified)
+        fallback_models = tuple(fallbacks)
+    else:
+        # Compatibility for older generated env files; new env files always use
+        # the explicit app-scoped route variables above.
+        configured_default = clean(environ.get("OPENCLAW_OPENAI_V1_DEFAULT_LLM"))
+        selected = select_openai_v1_default(providers, configured_default)
+        if selected is not None:
+            custom_primary, providers = selected
     explicit_custom = _select_explicit_custom_model(providers, explicit_model)
     if explicit_custom is not None:
         _, providers = explicit_custom
@@ -806,6 +848,7 @@ def build_config(
             primary_model,
             allowlist,
             telegram_accounts,
+            fallback_models,
         ),
         "plugins": _plugins_config(note_full_mode),
         "tools": _trusted_container_tools(),
