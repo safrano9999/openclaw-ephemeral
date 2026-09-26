@@ -12,6 +12,7 @@ After=vikai-bootstrap-openclaw-agents.service
 Type=oneshot
 Environment=HOME=/root
 ExecCondition=/bin/bash -c '[ "$${OPENCLAW_START:-1}" = "1" ]'
+ExecStartPre=/usr/bin/python3 /usr/local/libexec/openclaw-openai-refresh.py
 ExecStart=/usr/local/bin/openclaw-ephemeral.py schedule
 RemainAfterExit=yes
 TimeoutStartSec=infinity
