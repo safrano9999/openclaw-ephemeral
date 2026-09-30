@@ -90,7 +90,7 @@ own model default unless a model/provider selection is supplied.
 
 ## 3. openclaw-ephemeral
 
-[`safrano9999/openclaw-ephemeral`](https://github.com/safrano9999/openclaw-ephemeral)
+[`f24sales/openclaw-ephemeral`](https://github.com/f24sales/openclaw-ephemeral)
 owns the Python runtime scripts, container definition, tests, and release
 workflow. At every start, the runtime creates a fresh OpenClaw configuration
 from the injected environment rather than merging a previous configuration.
