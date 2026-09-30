@@ -684,6 +684,37 @@ class ConfigBuilderTests(unittest.TestCase):
                 )
                 self.assertNotIn("trustedProxies", config["gateway"])
 
+    def test_gateway_real_ip_fallback_requires_explicit_opt_in(self) -> None:
+        for value in (None, "", "0", "false", "1", "true"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as raw:
+                environ = {
+                    "HOME": raw,
+                    "OPENCLAW_GATEWAY_TOKEN": "gateway-secret",
+                    "OPENCLAW_TRUSTED_PROXIES": "10.20.30.40",
+                }
+                if value is not None:
+                    environ["OPENCLAW_ALLOW_REAL_IP_FALLBACK"] = value
+                config, _, _ = build_config(
+                    environ, destination=Path(raw) / "openclaw.json",
+                )
+                gateway = config["gateway"]
+                if value in ("1", "true"):
+                    self.assertIs(gateway["allowRealIpFallback"], True)
+                else:
+                    self.assertNotIn("allowRealIpFallback", gateway)
+                self.assertEqual(gateway["trustedProxies"], ["10.20.30.40"])
+                self.assertEqual(gateway["auth"]["mode"], "token")
+
+    def test_gateway_rejects_invalid_real_ip_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            with self.assertRaisesRegex(
+                ConfigurationError, "OPENCLAW_ALLOW_REAL_IP_FALLBACK",
+            ):
+                build_config(
+                    {"HOME": raw, "OPENCLAW_ALLOW_REAL_IP_FALLBACK": "maybe"},
+                    destination=Path(raw) / "openclaw.json",
+                )
+
     def test_gateway_rejects_invalid_proxy_addresses(self) -> None:
         for value in (
             "https://proxy.example.test", "proxy.example.test", "*",

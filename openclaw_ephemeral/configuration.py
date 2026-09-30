@@ -411,6 +411,8 @@ def _gateway_config(
     proxies = _trusted_proxies(environ)
     if proxies:
         gateway["trustedProxies"] = proxies
+    if boolean(environ, "OPENCLAW_ALLOW_REAL_IP_FALLBACK", default=False):
+        gateway["allowRealIpFallback"] = True
     if clean(environ.get("OPENCLAW_GATEWAY_TOKEN")):
         gateway["auth"] = {
             "mode": "token",

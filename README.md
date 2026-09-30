@@ -205,6 +205,19 @@ the actual proxy peers, which must overwrite or safely rebuild forwarded
 client headers. This setting does not enable trusted-proxy authentication or
 replace the gateway token and browser device pairing.
 
+`OPENCLAW_ALLOW_REAL_IP_FALLBACK=1` additionally enables
+`gateway.allowRealIpFallback`. It is omitted by default and when set to `0`.
+Enable it only when a trusted proxy overwrites `X-Real-IP` with its observed
+client address, for example Caddy's `header_up X-Real-IP {remote_host}`, and the
+forwarded client chain cannot identify the client. Behind NAT, this may identify
+the NAT peer rather than the original visitor. Gateway authentication remains
+unchanged.
+
+For older images, copy `init/OPENCLAW/10-real-ip.py` into the container's mounted
+`init/OPENCLAW/` directory. Its init runner must run after `openclaw-config.service`
+and before `openclaw.service`, with the same injected environment. The standalone
+patch preserves other settings; unset skips it, and explicit `0` removes the fallback.
+
 Optional HTTP MCP servers use repeatable groups:
 
 ```text
