@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .environment import ConfigurationError, clean, state_dir_path, workspace_path
+from .voice import voice_settings
 
 
 MANIFEST_NAME = "openclaw.plugin.json"
@@ -437,6 +438,12 @@ def register_openclaw_plugins(
         registered.append(plugin.plugin_id)
 
         properties = _config_properties(plugin.manifest)
+        # Only declared fields belong to this plugin. Separately injected Voice
+        # plugins and their init/config files retain their own configuration.
+        settings = voice_settings(plugin.plugin_id, environ)
+        declared_settings = {key: value for key, value in settings.items() if key in properties}
+        if declared_settings:
+            _merge_plugin_config(entry, declared_settings)
         if "autoSetupPython" in properties:
             _merge_plugin_config(entry, {"autoSetupPython": False})
         if "configPath" in properties:

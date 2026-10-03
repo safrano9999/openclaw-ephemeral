@@ -363,3 +363,14 @@ docker pull ghcr.io/safrano9999/openclaw-ephemeral:latest
 ```bash
 podman pull ghcr.io/safrano9999/openclaw-ephemeral:latest
 ```
+# Voice presets
+
+`env.example` exposes the five `SPEACHES_*` and five `MAI_TRANSCRIBE_*`
+settings using the usual `config.sh` presets. `SPEACHES_BASE_URL` is the
+speech server's API base (including `/v1`), not the OpenClaw gateway; it has
+no image-specific hostname or port default. The gateway keeps its separate
+`OPENCLAW_GATEWAY_PORT` setting.
+
+Only installed plugins with matching schema fields receive these settings.
+The MAI bearer stays an environment reference in generated JSON. Existing
+Voice init hooks and their provider selection remain separate and unchanged.
