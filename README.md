@@ -168,6 +168,16 @@ No additional embedding init hook is needed in images containing this support.
 
 ### Gateway and channels
 
+`OPENCLAW_WEB_FETCH_ALLOWED_HOSTNAMES` accepts comma-separated exact trusted
+hostnames for `tools.web.fetch.ssrfPolicy.allowedHostnames`. For example,
+`host.containers.internal` permits web_fetch requests to that container host.
+Entries are normalized and deduplicated; URLs, ports, paths and wildcards are
+rejected. The exception covers all ports on each listed hostname. An unset or
+blank value leaves the policy absent and OpenClaw's default blocking intact.
+This does not change browser or MCP network policies and does not enable broad
+private-network access. Configure this environment variable rather than editing
+the generated JSON, which is rebuilt on startup.
+
 Gateway and Telegram configuration use `OPENCLAW_GATEWAY_*` and
 `OPENCLAW_TELEGRAMTOKEN`. `OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS` supplies the
 fixed base for `gateway.controlUi.allowedOrigins`; it accepts comma-separated

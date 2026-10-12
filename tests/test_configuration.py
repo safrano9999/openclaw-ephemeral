@@ -55,6 +55,38 @@ def provider(
 
 
 class ConfigBuilderTests(unittest.TestCase):
+    def test_web_fetch_host_exceptions_are_explicit_and_scoped(self) -> None:
+        for value, expected in (
+            ("", []),
+            (" , ", []),
+            (" Host.Containers.Internal.,host.containers.internal,other.internal ",
+             ["host.containers.internal", "other.internal"]),
+        ):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as raw:
+                config, _, _ = build_config(
+                    {"HOME": raw, "OPENCLAW_WEB_FETCH_ALLOWED_HOSTNAMES": value},
+                    destination=Path(raw) / "openclaw.json",
+                )
+                if expected:
+                    self.assertEqual(config["tools"]["web"], {
+                        "fetch": {"ssrfPolicy": {"allowedHostnames": expected}},
+                    })
+                else:
+                    self.assertNotIn("web", config["tools"])
+                self.assertNotIn("ssrfPolicy", config.get("browser", {}))
+                self.assertEqual(config["tools"]["exec"]["mode"], "full")
+
+    def test_web_fetch_host_exceptions_reject_ambiguous_targets(self) -> None:
+        for value in ("*", "*.internal", "https://host.containers.internal:2009/",
+                      "host.containers.internal:2009", "host/path", "a..internal",
+                      "-host.internal", "host internal", "user@host"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as raw:
+                with self.assertRaises(ConfigurationError):
+                    build_config(
+                        {"HOME": raw, "OPENCLAW_WEB_FETCH_ALLOWED_HOSTNAMES": value},
+                        destination=Path(raw) / "openclaw.json",
+                    )
+
     def test_unpatched_runtime_does_not_invent_deterministic_models(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             config, primary, full_mode = build_config(

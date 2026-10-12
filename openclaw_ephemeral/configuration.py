@@ -652,10 +652,10 @@ def _plugins_config(note_full_mode: bool) -> dict[str, Any]:
     }
 
 
-def _trusted_container_tools() -> dict[str, Any]:
+def _trusted_container_tools(environ: Mapping[str, str]) -> dict[str, Any]:
     """Return the trusted policy in OpenClaw's canonical config form."""
 
-    return {
+    tools: dict[str, Any] = {
         "profile": "full",
         "fs": {"workspaceOnly": False},
         "exec": {
@@ -664,6 +664,27 @@ def _trusted_container_tools() -> dict[str, Any]:
             "applyPatch": {"workspaceOnly": False},
         },
     }
+    name = "OPENCLAW_WEB_FETCH_ALLOWED_HOSTNAMES"
+    hosts: list[str] = []
+    for entry in clean(environ.get(name)).split(","):
+        host = entry.strip().lower().removesuffix(".")
+        if not host:
+            continue
+        # Exact DNS names only: no URLs, ports or wildcard network access.
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError:
+            raise ConfigurationError(f"{name} requires exact hostnames") from None
+        if len(host) > 253 or any(
+            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+            for label in host.split(".")
+        ):
+            raise ConfigurationError(f"{name} requires exact hostnames without URLs, ports or wildcards")
+        if host not in hosts:
+            hosts.append(host)
+    if hosts:
+        tools["web"] = {"fetch": {"ssrfPolicy": {"allowedHostnames": hosts}}}
+    return tools
 
 
 def _embedding_config(environ: Mapping[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -853,7 +874,7 @@ def build_config(
             fallback_models,
         ),
         "plugins": _plugins_config(note_full_mode),
-        "tools": _trusted_container_tools(),
+        "tools": _trusted_container_tools(environ),
     }
     configured_mcp_servers = (
         tuple(mcp_servers)
