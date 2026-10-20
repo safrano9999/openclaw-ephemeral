@@ -29,6 +29,7 @@ from .environment import (
     without_secret_values,
 )
 from .filesystem import atomic_write_json
+from .injected_discovery import DISCOVERY_PLUGIN_ID, prepare_discovery_plugin
 from .plugins import (
     discover_openclaw_plugins,
     register_openclaw_plugins,
@@ -524,21 +525,15 @@ def _main_agent_config(
             **({"fallbacks": list(fallback_models)} if fallback_models else {}),
         },
         "models": model_allowlist,
-        # Bare primary names resolve through the qualified provider catalog; the
-        # explicit override policy accepts qualified refs and OpenRouter selectors.
-        "modelPolicy": {
-            "allow": [
-                model for model in model_allowlist
-                if "/" in model or model in {"openrouter:auto", "openrouter:free"}
-            ]
-        },
+        # An explicit empty policy permits all models, including future rows
+        # discovered by provider plugins. Model maps only carry preferences.
+        "modelPolicy": {"allow": []},
         "sandbox": {"mode": "off"},
     }
     if not primary_model:
         del defaults["model"]
     if not model_allowlist:
         del defaults["models"]
-        del defaults["modelPolicy"]
     agents = {}
     names = dict.fromkeys(
         ("main", *(account["agent"] for account in telegram_accounts))
@@ -756,6 +751,8 @@ def _model_allowlist(
     for model in sorted(set(native_models)):
         models[model] = {}
     for provider in providers:
+        if provider.native_discovery:
+            models[f"{provider.provider_id}/*"] = {}
         for model in provider.models:
             models[f"{provider.provider_id}/{model}"] = {}
     if explicit_model:
@@ -944,7 +941,12 @@ def configure(
     providers, openai_warnings = discover_openai_v1_providers(
         injected,
         opener=opener,
+        defer_discovery=True,
     )
+    discovery_plugin = prepare_discovery_plugin(providers, injected, destination=destination)
+    discovered_plugins = tuple(p for p in discovered_plugins if p.plugin_id != DISCOVERY_PLUGIN_ID)
+    if discovery_plugin is not None:
+        discovered_plugins = (*discovered_plugins, discovery_plugin)
     mcp_servers = discover_mcp_servers(injected)
     # Validate optional webhook groups before the gateway starts.
     build_schedule_plan(injected)

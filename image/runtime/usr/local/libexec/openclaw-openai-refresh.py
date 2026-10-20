@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Refresh the OpenAI model catalog only for the pinned OpenClaw runtime."""
+"""Publish one native catalog refresh for all agents before the init hooks."""
 
+import json
 import re
 import subprocess
-from pathlib import Path
 
 
 EXPECTED_VERSION = "2026.9.4"
-MARKER = Path("/run/openclaw-ephemeral-openai-refresh.done")
 VERSION_LINE = re.compile(r"^OpenClaw (?P<version>\d+\.\d+\.\d+) \([^\n]+\)$")
 
 
 def main() -> int:
-    if MARKER.exists():
-        print("OpenAI model refresh skipped: already completed for this boot")
-        return 0
     result = subprocess.run(
         ["openclaw", "--version"],
         check=True,
@@ -24,14 +20,22 @@ def main() -> int:
     line = result.stdout.strip()
     match = VERSION_LINE.fullmatch(line)
     if match is None or match.group("version") != EXPECTED_VERSION:
-        print(f"OpenAI model refresh skipped: expected OpenClaw {EXPECTED_VERSION}, got {line or 'unknown'}")
-        return 0
-    print(f"OpenAI model refresh: OpenClaw {EXPECTED_VERSION}")
-    subprocess.run(
-        ["openclaw", "models", "list", "--provider", "openai", "--refresh"],
+        print(f"Catalog refresh requires OpenClaw {EXPECTED_VERSION}; got {line or 'unknown'}")
+        return 1
+    # Replaced: openclaw models list --provider openai --refresh
+    # --provider filters output; it does not publish catalogs to every agent.
+    print("Refreshing and publishing model catalogs for all agents", flush=True)
+    result = subprocess.run(
+        ["openclaw", "gateway", "call", "ephemeral.models.refresh",
+         "--json", "--timeout", "420000"],
         check=True,
+        capture_output=True,
+        text=True,
     )
-    MARKER.touch()
+    result = json.loads(result.stdout)
+    for agent in result["agents"]:
+        print(f"Agent {agent['agentId']}: {agent['models']} catalog models", flush=True)
+    print(f"Injected catalog acquisitions: {result['injectedCatalogAcquisitions']}")
     return 0
 
 

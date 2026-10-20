@@ -137,7 +137,7 @@ class EmbeddingConfigurationTests(unittest.TestCase):
             ):
                 for _ in range(2):
                     destination.write_text('{"memory":{"search":{"provider":"openai"}}}')
-                    result = configure(environ, opener=opener)
+                    result = configure(environ, opener=opener, runner=Mock())
                     written = json.loads(destination.read_text())
                     self.assertEqual(written["memory"]["search"]["provider"], "nous-embeddings")
                     self.assertEqual(result.openai_v1_provider_count, 0)

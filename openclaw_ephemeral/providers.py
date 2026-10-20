@@ -44,6 +44,8 @@ class OpenAIV1Provider:
     key_env: str
     models: tuple[str, ...]
     streaming: bool
+    native_discovery: bool = False
+    discovery_headers_env: str = ""
 
     def openclaw_config(
         self,
@@ -520,6 +522,7 @@ def discover_openai_v1_providers(
     *,
     opener: Callable[..., Any] = urlopen,
     timeout: float | None = None,
+    defer_discovery: bool = False,
 ) -> tuple[tuple[OpenAIV1Provider, ...], tuple[str, ...]]:
     """Discover every repeated OPENAI_V1 group through its /v1/models API."""
 
@@ -548,6 +551,14 @@ def discover_openai_v1_providers(
             raw_url,
             _group_value(environ, "PORT", index),
         )
+        if defer_discovery:
+            providers.append(OpenAIV1Provider(
+                index=index, provider_id=provider_id, configured_name=configured_name,
+                base_url=base_url, key_env=key_env, models=(),
+                streaming=_streaming_value(environ, index), native_discovery=True,
+                discovery_headers_env=_group_name(environ, "DISCOVERY_HEADERS", index),
+            ))
+            continue
         try:
             models = _discover_openai_v1_models(
                 base_url,
@@ -618,7 +629,7 @@ def select_openai_v1_default(
             "OPENCLAW_OPENAI_V1_DEFAULT_LLM must include a model name"
         )
 
-    if selected_model not in selected.models:
+    if selected_model not in selected.models and not selected.native_discovery:
         replacement = OpenAIV1Provider(
             index=selected.index,
             provider_id=selected.provider_id,

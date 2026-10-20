@@ -64,8 +64,9 @@ installed package version matches the image. Installations at other paths,
 custom plugin records, and unrelated persistent state are preserved. This
 prevents an image upgrade from retaining obsolete Codex plugin metadata.
 
-Generated configurations use keyed `agents.entries`, explicit model override
-allowlists in `agents.defaults.modelPolicy.allow`, and `tools.exec.mode=full`.
+Generated configurations use keyed `agents.entries`, an explicitly unrestricted
+`agents.defaults.modelPolicy.allow: []`, and `tools.exec.mode=full`. All generated
+agents inherit that model policy; per-model preferences do not limit access.
 The model metadata catalog and selected primary remain available, including
 bare model names resolved through configured provider catalogs. Multi-agent
 configurations retain `main` as the owner of system work and Talk, with the
@@ -129,6 +130,46 @@ OPENAI_V1_STREAM
 OPENAI_V1_DISCOVERY_HEADERS
 OPENAI_V1_MODELS
 ```
+
+`configure` registers injected OpenAI-compatible providers through the generated
+`ephemeral-openai-v1` plugin. Each provider keeps its own normalized base URL
+and environment SecretRef. The plugin uses OpenClaw's public native catalog SDK
+to query `models` relative to that URL; there are no model-name seeds for these
+providers. Primary/fallback preferences are retained as selections, without
+inventing catalog rows. Native chat-model projection, caching and strict failure
+outcomes remain OpenClaw's responsibility. Extra discovery headers are read
+from their group's environment variable at request time, never stored in the
+plugin descriptor. Authorization cannot be overridden through extra headers.
+
+Every injected provider uses the same native discovery path, regardless of its
+name. Private-network access is restricted to that provider's configured host.
+Other consumers of the Python discovery helper retain eager discovery by default.
+Each injected provider has a `provider/*` discovery reference in the agent
+defaults so the batch includes it even when it is not the selected primary.
+These references contain no model-name seeds; `modelPolicy.allow: []` keeps
+model access unrestricted for every agent.
+
+The existing `openclaw-ephemeral-schedule.service` refreshes the catalog before
+dispatching init hooks. Its `openclaw-openai-refresh.py` pre-start helper now calls
+the authenticated `ephemeral.models.refresh` Gateway method once. There is no
+separate OpenAI refresh and no per-agent discovery loop. OpenAI participates in
+the same publication as the other providers.
+
+The method uses OpenClaw's native batch lifecycle to publish catalogs for every
+configured agent and notify existing chat sessions. During that batch, injected
+provider acquisitions are shared only for identical provider, URL, credential,
+profile and header inputs. The batch cache is released on success or failure.
+The old once-per-boot marker is no longer used, so the helper can also be invoked
+for later updates without dispatching webhooks.
+
+The batch lifecycle entry point is internal to OpenClaw **2026.9.4**. Both the
+helper and bridge reject other versions; this integration must be reviewed when
+upgrading OpenClaw. The bridge does not modify the installed OpenClaw files.
+`OPENAI_V1_MODELS` seeds apply only to that eager path. The generated plugin lives
+under `OPENCLAW_STATE_DIR/generated-plugins/ephemeral-openai-v1` (or the normal
+state-directory fallback), is registered with explicit load paths, and contains
+only code, endpoints and environment variable names. It is regenerated from the
+current groups. Discovery does not require `openclaw onboard`.
 
 Numbered OpenAI-v1 groups use `_2`, `_3`, and subsequent suffixes. Native
 OpenClaw providers continue to use their established `*_API_KEY` variables.

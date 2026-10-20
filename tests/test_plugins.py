@@ -198,9 +198,10 @@ class ManagedPluginDiscoveryTests(unittest.TestCase):
                 "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS": "http://localhost:18789",
             }, runner=runner)
             config = json.loads(destination.read_text(encoding="utf-8"))
-            self.assertEqual(result.plugin_count, 2)
+            self.assertEqual(result.plugin_count, 3)
             self.assertEqual(set(config["plugins"]["load"]["paths"]), {
                 str(paths["brave"]),
+                str(state / "generated-plugins" / "ephemeral-openai-v1"),
             })
             for name in ("codex", "brave"):
                 self.assertTrue(config["plugins"]["entries"][name]["enabled"])

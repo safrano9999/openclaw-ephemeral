@@ -14,7 +14,7 @@ from openclaw_ephemeral.configuration import (
     DUMMY_MODEL,
     NOTE_MODEL,
     build_config as _build_config,
-    configure,
+    configure as _configure,
     discover_mcp_servers,
 )
 from openclaw_ephemeral.environment import ConfigurationError
@@ -26,6 +26,10 @@ CONTROL_UI_ORIGINS = (
     "http://localhost:18789,"
     "http://127.0.0.1:20789"
 )
+
+def configure(environ, **kwargs):
+    kwargs.setdefault("runner", lambda command, **_: subprocess.CompletedProcess(command, 0, stdout="{}", stderr=""))
+    return _configure(environ, **kwargs)
 
 
 def build_config(environ: dict[str, str], **kwargs: object):
@@ -41,6 +45,7 @@ def provider(
     provider_id: str = "litellm",
     models: tuple[str, ...] = ("model-a",),
     streaming: bool = False,
+    native_discovery: bool = False,
 ) -> OpenAIV1Provider:
     suffix = "" if index == 1 else f"_{index}"
     return OpenAIV1Provider(
@@ -51,10 +56,28 @@ def provider(
         key_env=f"OPENAI_V1_KEY{suffix}",
         models=models,
         streaming=streaming,
+        native_discovery=native_discovery,
     )
 
 
 class ConfigBuilderTests(unittest.TestCase):
+    def test_native_providers_are_discovered_without_named_model_seeds(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = build_config(
+                {"HOME": raw},
+                destination=Path(raw) / "openclaw.json",
+                openai_v1_providers=(
+                    provider(provider_id="alpha", models=(), native_discovery=True),
+                    provider(index=2, provider_id="beta", models=(), native_discovery=True),
+                ),
+            )
+            defaults = config["agents"]["defaults"]
+            self.assertIn("alpha/*", defaults["models"])
+            self.assertIn("beta/*", defaults["models"])
+            self.assertEqual(defaults["modelPolicy"]["allow"], [])
+            for entry in config["models"]["providers"].values():
+                self.assertEqual(entry["models"], [])
+
     def test_web_fetch_host_exceptions_are_explicit_and_scoped(self) -> None:
         for value, expected in (
             ("", []),
@@ -106,7 +129,7 @@ class ConfigBuilderTests(unittest.TestCase):
         self.assertEqual(primary, "")
         self.assertFalse(full_mode)
         defaults = config["agents"]["defaults"]
-        for name in ("model", "models", "modelPolicy"):
+        for name in ("model", "models"):
             self.assertNotIn(name, defaults)
 
     def test_note_plugin_alone_does_not_imply_deterministic_core(self) -> None:
@@ -312,7 +335,7 @@ class ConfigBuilderTests(unittest.TestCase):
             )
             self.assertEqual(
                 config["agents"]["defaults"]["modelPolicy"]["allow"],
-                [DUMMY_MODEL, NOTE_MODEL],
+                [],
             )
             self.assertEqual(
                 config["agents"]["defaults"]["model"]["primary"],
@@ -412,7 +435,7 @@ class ConfigBuilderTests(unittest.TestCase):
             )
             self.assertEqual(
                 config["agents"]["defaults"]["modelPolicy"]["allow"],
-                list(allowlist),
+                [],
             )
 
     def test_bare_custom_primary_keeps_its_qualified_model_policy(self) -> None:
@@ -429,7 +452,7 @@ class ConfigBuilderTests(unittest.TestCase):
         self.assertIn("selected", defaults["models"])
         self.assertEqual(
             defaults["modelPolicy"]["allow"],
-            ["litellm/selected", "litellm/other"],
+            [],
         )
 
     def test_openclaw_model_overrides_openai_v1_default_and_is_allowlisted(self) -> None:
