@@ -142,8 +142,10 @@ const sdk = async args => {
   return {provider:{...args.providerConfig, models:[{id:args.providerId+"-live"}]}, headers};
 };
 const requests = [];
+const errors = [];
 let refresh;
 createPlugin(specs, sdk, async args => requests.push(args)).register({
+  logger: {error: message => errors.push(message)},
   registerProvider: p => registered.push(p),
   registerGatewayMethod: (name, handler, options) => {
     assert.equal(name, "ephemeral.models.refresh");
@@ -155,10 +157,17 @@ const replies = [];
 await refresh({context:{publish:async () => ({agents:["main","seo"]})},
   respond:(...args)=>replies.push(args)});
 assert.deepEqual(replies, [[true,{agents:["main","seo"]}]]);
-await refresh({context:{publish:async () => {throw new Error("private details");}},
+process.env.DIAGNOSTIC_TEST_KEY = '"private-log-secret"';
+await refresh({context:{publish:async () => {throw new Error("private details private-log-secret Bearer other-token https://example.test/?token=query-token",
+  {cause:Object.assign(new Error("network connection failed"),{code:"ECONNREFUSED"})});}},
   respond:(...args)=>replies.push(args)});
 assert.deepEqual(replies[1], [false,undefined,{
   code:"UNAVAILABLE",message:"Model catalog publication failed"}]);
+assert.equal(errors.length,1);
+assert.match(errors[0],/private details/);
+assert.match(errors[0],/ECONNREFUSED/);
+assert.match(errors[0],/network connection failed/);
+for (const secret of ["private-log-secret","other-token","query-token"]) assert.ok(!errors[0].includes(secret));
 assert.deepEqual(registered.map(p=>p.envVars), [["KEY_A"],["KEY_B"]]);
 const ctx = {resolveProviderApiKey: id => ({apiKey:id+"-test-key"})};
 process.env.HEAD_B = '{"X-Region":"eu"}';

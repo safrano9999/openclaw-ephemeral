@@ -1,4 +1,6 @@
 import importlib.util
+import contextlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -63,3 +65,26 @@ assert.equal(globalThis[BATCH_CACHE],undefined);
             self.assertEqual(module.main(), 0)
             self.assertEqual(module.main(), 0)
         self.assertEqual(runner.call_count, 4)
+
+    def test_init_failure_logs_command_output_without_credentials(self):
+        path = Path(__file__).resolve().parents[1] / "image/runtime/usr/local/libexec/openclaw-openai-refresh.py"
+        spec = importlib.util.spec_from_file_location("catalog_init_failure", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        runner = Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, stdout="OpenClaw 2026.9.4 (test)\n"),
+            subprocess.CompletedProcess([], 1, stdout="Catalog failed: private-log-secret",
+                stderr="ECONNREFUSED: connection failed; Bearer other-token https://example.test/?token=query-token"),
+        ])
+        output = io.StringIO()
+        with patch.object(module.subprocess, "run", runner), \
+                patch.dict(module.os.environ, {"OPENAI_V1_KEY": '"private-log-secret"'}), \
+                contextlib.redirect_stderr(output):
+            self.assertEqual(module.main(), 1)
+        message = output.getvalue()
+        self.assertIn("exit 1", message)
+        self.assertIn("ECONNREFUSED", message)
+        self.assertIn("Catalog failed", message)
+        for secret in ("private-log-secret", "other-token", "query-token"):
+            self.assertNotIn(secret, message)
+        self.assertEqual(runner.call_count, 2)

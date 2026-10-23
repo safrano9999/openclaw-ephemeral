@@ -39,6 +39,20 @@ function discoveryHeaders(name, auth) {
     Authorization: `Bearer ${auth.discoveryApiKey ?? auth.apiKey}` };
 }
 
+function catalogErrorDetails(error) {
+  const parts = [];
+  for (let cause = error, depth = 0; cause && depth < 4; cause = cause.cause, depth++)
+    parts.push(`${cause.code ? `[${cause.code}] ` : ""}${cause.stack || String(cause)}`);
+  let message = parts.join("\nCaused by: ");
+  for (const [name, raw] of Object.entries(process.env)) {
+    if (!/KEY|TOKEN|BEARER|SECRET|PASSWORD|CREDENTIAL/i.test(name) || !raw) continue;
+    const value = raw.trim().replace(/^(['"])(.*)\1$/s, "$2");
+    if (value.length >= 4) message = message.split(value).join("[REDACTED]");
+  }
+  return message.replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/([?&](?:api[_-]?key|key|token|access_token|secret)=)[^&#\s]+/gi, "$1[REDACTED]");
+}
+
 export function createPlugin(specs, buildCatalog = buildOpenAICompatibleLiveProviderCatalog,
                              fetchGuard = fetchWithSsrFGuard) {
   return {
@@ -48,7 +62,8 @@ export function createPlugin(specs, buildCatalog = buildOpenAICompatibleLiveProv
       api.registerGatewayMethod("ephemeral.models.refresh", async ({ context, respond }) => {
         try {
           respond(true, await publishAllCatalogs(context));
-        } catch {
+        } catch (error) {
+          api.logger?.error?.(`[ephemeral-openai-v1] Catalog publication failed: ${catalogErrorDetails(error)}`);
           respond(false, undefined, {
             code: "UNAVAILABLE",
             message: "Model catalog publication failed",
