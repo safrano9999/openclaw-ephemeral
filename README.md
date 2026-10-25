@@ -301,7 +301,8 @@ it does not change general agent tool policies or other runtimes.
 `HERMES_ALLOW` and `OPENCODE_ALLOW` select profiles/agents in their respective
 ephemeral configurators. All three selectors belong to the same repeated MCP
 group. Rename existing `MCP_ALLOW[_NN]` assignments to `OPENCLAW_ALLOW[_NN]`
-when upgrading; the old variable is no longer consumed.
+before rerunning `config.sh`. Existing deployments retain `MCP_ALLOW` as a
+read fallback until migration; an explicitly supplied `OPENCLAW_ALLOW` wins.
 Bearers are stored as environment placeholders such as
 `Bearer ${MCP_SERVER_BEARER_02}`, never as resolved tokens.
 Set the matching `MCP_SERVER_ALLOW_PRIVATE[_NN]` to `1` only for a trusted MCP

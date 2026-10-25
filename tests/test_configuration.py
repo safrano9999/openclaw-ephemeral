@@ -267,6 +267,12 @@ class ConfigBuilderTests(unittest.TestCase):
         self.assertEqual([server.name for server in servers], ["own"])
         self.assertEqual(servers[0].openclaw_config()["codex"]["agents"], ["main"])
 
+    def test_upgrade_preserves_old_selection_and_explicit_new_value_wins(self) -> None:
+        env = {'MCP_SERVER_URL_02': 'http://one.test/mcp', 'MCP_ALLOW_02': 'seo'}
+        self.assertEqual(discover_mcp_servers(env)[0].agents, ('seo',))
+        self.assertEqual(discover_mcp_servers({**env, 'OPENCLAW_ALLOW_02': 'none'}), ())
+        self.assertEqual(discover_mcp_servers({**env, 'OPENCLAW_ALLOW_02': ''})[0].agents, ())
+
     def test_empty_optional_mcp_groups_do_not_create_mcp_config(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             config, _, _ = build_config(

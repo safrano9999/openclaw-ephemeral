@@ -49,7 +49,7 @@ NOTE_MODEL = "dummy/note"
 MAX_MCP_SERVERS = 50
 MCP_FIELDS = ("NAME", "URL", "BEARER", "ALLOW_PRIVATE", "ALLOW")
 MCP_SUFFIX = re.compile(
-    r"^(?:MCP_SERVER_(?:NAME|URL|BEARER|ALLOW_PRIVATE)|OPENCLAW_ALLOW)_(\d+)$"
+    r"^(?:MCP_SERVER_(?:NAME|URL|BEARER|ALLOW_PRIVATE)|OPENCLAW_ALLOW|MCP_ALLOW)_(\d+)$"
 )
 SAFE_MCP_SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 TELEGRAM_SUFFIX = re.compile(
@@ -111,6 +111,13 @@ def _mcp_field_env_name(
     index: int,
 ) -> str:
     base = "OPENCLAW_ALLOW" if field == "ALLOW" else f"MCP_SERVER_{field}"
+    if field == "ALLOW":
+        # Preserve existing selections until an installation migrates its .env.
+        for prefix in ("OPENCLAW_ALLOW", "MCP_ALLOW"):
+            keys = (prefix,) if index == 1 else (f"{prefix}_{index:02d}", f"{prefix}_{index}")
+            for key in keys:
+                if key in environ:
+                    return key
     if index == 1:
         return base
     padded = f"{base}_{index:02d}"
