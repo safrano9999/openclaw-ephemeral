@@ -224,12 +224,12 @@ class ConfigBuilderTests(unittest.TestCase):
                         "HOME": raw,
                         "MCP_SERVER_URL": "http://first.test/mcp",
                         "MCP_SERVER_URL_02": "http://second.test/mcp",
-                        "MCP_ALLOW_02": " MAIN, goldesel, main, , ",
+                        "OPENCLAW_ALLOW_02": " MAIN, goldesel, main, , ",
                         "MCP_SERVER_URL_3": "http://third.test/mcp",
-                        "MCP_ALLOW_3": "haus",
+                        "OPENCLAW_ALLOW_3": "haus",
                     }
                     if default is not None:
-                        environ["MCP_ALLOW"] = default
+                        environ["OPENCLAW_ALLOW"] = default
                     config, _, _ = build_config(
                         environ, destination=Path(raw) / "openclaw.json",
                     )
@@ -247,15 +247,25 @@ class ConfigBuilderTests(unittest.TestCase):
                     })
 
     def test_invalid_mcp_agent_selection_is_rejected(self) -> None:
-        for value in (", ,", "main,*", "bad/name", "main goldesel", "1main"):
-            with self.subTest(value=value), self.assertRaisesRegex(ConfigurationError, "MCP_ALLOW_02"):
+        for value in (", ,", "main,*", "main,none", "bad/name", "main goldesel", "1main"):
+            with self.subTest(value=value), self.assertRaisesRegex(ConfigurationError, "OPENCLAW_ALLOW_02"):
                 discover_mcp_servers({
                     "MCP_SERVER_URL_02": "http://example.test/mcp",
-                    "MCP_ALLOW_02": value,
+                    "OPENCLAW_ALLOW_02": value,
                 })
-        for key in ("MCP_ALLOW_01", "MCP_ALLOW_51", "MCP_ALLOW_002"):
+        for key in ("OPENCLAW_ALLOW_01", "OPENCLAW_ALLOW_51", "OPENCLAW_ALLOW_002"):
             with self.subTest(key=key), self.assertRaisesRegex(ConfigurationError, key):
                 discover_mcp_servers({key: "main"})
+
+    def test_none_omits_server_and_other_runtime_selectors_are_independent(self) -> None:
+        servers = discover_mcp_servers({
+            "MCP_SERVER_NAME": "hermes-only", "MCP_SERVER_URL": "http://one.test/mcp",
+            "OPENCLAW_ALLOW": " NONE ", "HERMES_ALLOW": "main",
+            "MCP_SERVER_NAME_02": "own", "MCP_SERVER_URL_02": "http://two.test/mcp",
+            "OPENCLAW_ALLOW_02": "main", "HERMES_ALLOW_02": "none", "OPENCODE_ALLOW_02": "none",
+        })
+        self.assertEqual([server.name for server in servers], ["own"])
+        self.assertEqual(servers[0].openclaw_config()["codex"]["agents"], ["main"])
 
     def test_empty_optional_mcp_groups_do_not_create_mcp_config(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

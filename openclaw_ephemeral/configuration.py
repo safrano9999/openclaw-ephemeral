@@ -49,7 +49,7 @@ NOTE_MODEL = "dummy/note"
 MAX_MCP_SERVERS = 50
 MCP_FIELDS = ("NAME", "URL", "BEARER", "ALLOW_PRIVATE", "ALLOW")
 MCP_SUFFIX = re.compile(
-    r"^(?:MCP_SERVER_(?:NAME|URL|BEARER|ALLOW_PRIVATE)|MCP_ALLOW)_(\d+)$"
+    r"^(?:MCP_SERVER_(?:NAME|URL|BEARER|ALLOW_PRIVATE)|OPENCLAW_ALLOW)_(\d+)$"
 )
 SAFE_MCP_SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 TELEGRAM_SUFFIX = re.compile(
@@ -110,7 +110,7 @@ def _mcp_field_env_name(
     field: str,
     index: int,
 ) -> str:
-    base = "MCP_ALLOW" if field == "ALLOW" else f"MCP_SERVER_{field}"
+    base = "OPENCLAW_ALLOW" if field == "ALLOW" else f"MCP_SERVER_{field}"
     if index == 1:
         return base
     padded = f"{base}_{index:02d}"
@@ -168,15 +168,17 @@ def _mcp_server_name(raw_name: str, url: str, index: int) -> str:
     return name
 
 
-def _mcp_allowed_agents(environ: Mapping[str, str], key: str) -> tuple[str, ...]:
-    raw = clean(environ.get(key))
+def _mcp_allowed_agents(environ: Mapping[str, str], key: str) -> tuple[str, ...] | None:
+    raw = clean(environ.get(key)).lower()
+    if raw == "none":
+        return None
     if raw in {"", "*"}:
         return ()
     agents = tuple(dict.fromkeys(
         clean(agent).lower() for agent in raw.split(",") if clean(agent)
     ))
-    if not agents or any(SAFE_AGENT_ID.fullmatch(agent) is None for agent in agents):
-        raise ConfigurationError(f"{key} must be '*' or comma-separated agent ids")
+    if not agents or "none" in agents or any(SAFE_AGENT_ID.fullmatch(agent) is None for agent in agents):
+        raise ConfigurationError(f"{key} must be '*', 'none', or comma-separated agent ids")
     return agents
 
 
@@ -194,6 +196,9 @@ def discover_mcp_servers(
         }
         raw_url = clean(environ.get(fields["URL"]))
         if not raw_url:
+            continue
+        agents = _mcp_allowed_agents(environ, fields["ALLOW"])
+        if agents is None:
             continue
         url = _mcp_server_url(raw_url, index)
         name = _mcp_server_name(environ.get(fields["NAME"], ""), url, index)
@@ -218,7 +223,7 @@ def discover_mcp_servers(
                     fields["ALLOW_PRIVATE"],
                     default=False,
                 ),
-                agents=_mcp_allowed_agents(environ, fields["ALLOW"]),
+                agents=agents,
             )
         )
     return tuple(servers)
