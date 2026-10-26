@@ -276,6 +276,11 @@ For older images, copy `init/OPENCLAW/10-real-ip.py` into the container's mounte
 and before `openclaw.service`, with the same injected environment. The standalone
 patch preserves other settings; unset skips it, and explicit `0` removes the fallback.
 
+`OPENCLAW_MCP_TIMEOUT_SECONDS` sets the request timeout for all configured
+OpenClaw MCP servers, including tool discovery. It defaults to 10 seconds when
+unset or blank and is written as `requestTimeoutMs` in milliseconds. Set it to
+`30` to allow up to 30 seconds; successful requests return immediately.
+
 Optional HTTP MCP servers use repeatable groups:
 
 ```text
@@ -300,11 +305,12 @@ The first group has no `_01` suffix; later groups use `_02`, `_03`, and so on.
 Only the URL activates a group. The name and bearer are optional, with a
 missing name derived from the URL hostname. Servers advertise parallel tool calls
 and use Codex approval mode `approve`. Optional `OPENCLAW_ALLOW[_NN]` contains CSV
-agent ids for that server's `codex.agents`; blank, omitted, or `*` leaves the
-field absent and makes the server available to all Codex agents. `none` omits
-the server from OpenClaw entirely. Explicit ids
-are trimmed, lowercased, and deduplicated. This is Codex-specific MCP selection;
-it does not change general agent tool policies or other runtimes.
+OpenClaw agent ids. The generated per-agent tool policies hide this server's
+tools from other agents, independently of the selected model or provider.
+The same selection is also written to `codex.agents` for Codex-backed sessions.
+Blank, omitted, or `*` makes the server available to every OpenClaw agent;
+`none` omits it entirely. Explicit ids are trimmed, lowercased, and deduplicated.
+These tool policies do not prevent the shared runtime from discovering servers.
 `HERMES_ALLOW` and `OPENCODE_ALLOW` select profiles/agents in their respective
 ephemeral configurators. All three selectors belong to the same repeated MCP
 group. Rename existing `MCP_ALLOW[_NN]` assignments to `OPENCLAW_ALLOW[_NN]`

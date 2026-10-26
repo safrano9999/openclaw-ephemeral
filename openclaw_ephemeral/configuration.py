@@ -85,6 +85,7 @@ class McpServer:
     bearer_env: str | None
     allow_private: bool
     agents: tuple[str, ...] = ()
+    request_timeout_ms: int = 10_000
 
     def openclaw_config(self) -> dict[str, Any]:
         config: dict[str, Any] = {
@@ -92,6 +93,7 @@ class McpServer:
             "url": self.url,
             "transport": "streamable-http",
             "supportsParallelToolCalls": True,
+            "requestTimeoutMs": self.request_timeout_ms,
             "codex": {"defaultToolsApprovalMode": "approve"},
         }
         if self.bearer_env is not None:
@@ -231,9 +233,41 @@ def discover_mcp_servers(
                     default=False,
                 ),
                 agents=agents,
+                request_timeout_ms=1_000 * integer(
+                    environ, "OPENCLAW_MCP_TIMEOUT_SECONDS",
+                    default=10, maximum=2_147_483,
+                ),
             )
         )
     return tuple(servers)
+
+
+def _apply_mcp_agent_tools(config: dict[str, Any], servers: Sequence[McpServer]) -> None:
+    """Apply agent selection to model-facing MCP tools in every OpenClaw runtime."""
+    prefixes: dict[str, str] = {}
+    used: set[str] = set()
+    for server in servers:
+        # Match OpenClaw's declaration-ordered, 30-character safe server names.
+        base = re.sub(r"[^A-Za-z0-9_-]", "-", server.name)
+        if not re.match(r"[A-Za-z]", base):
+            base = f"mcp-{base}"
+        base = base[:30]
+        prefix = base
+        number = 2
+        while prefix.lower() in used:
+            suffix = f"-{number}"
+            prefix = base[:30 - len(suffix)] + suffix
+            number += 1
+        used.add(prefix.lower())
+        prefixes[server.name] = prefix
+    for agent_id, agent in config["agents"]["entries"].items():
+        agent["tools"] = {
+            "allow": ["*"],
+            "deny": [
+                f"{prefixes[server.name]}__*" for server in servers
+                if server.agents and agent_id not in server.agents
+            ],
+        }
 
 
 def _trusted_proxies(environ: Mapping[str, str]) -> list[str]:
@@ -913,6 +947,7 @@ def build_config(
                 for server in configured_mcp_servers
             }
         }
+    _apply_mcp_agent_tools(config, configured_mcp_servers)
     custom_models = _models_config(providers)
     embedding_providers, memory_search = _embedding_config(environ)
     if embedding_providers:
@@ -1025,8 +1060,7 @@ def configure(
                 f"cannot refresh the OpenClaw plugin registry: {exc}"
             ) from exc
         config = json.loads(destination.read_text(encoding="utf-8"))
-        for agent in config["agents"]["entries"].values():
-            agent["tools"] = {"allow": ["*"], "deny": []}
+        _apply_mcp_agent_tools(config, mcp_servers)
         atomic_write_json(destination, config)
 
     return ConfigurationResult(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from fnmatch import fnmatchcase
 import os
 import sqlite3
 import stat
@@ -13,6 +14,7 @@ from unittest.mock import patch
 from openclaw_ephemeral.configuration import (
     DUMMY_MODEL,
     NOTE_MODEL,
+    _apply_mcp_agent_tools,
     build_config as _build_config,
     configure as _configure,
     discover_mcp_servers,
@@ -216,7 +218,7 @@ class ConfigBuilderTests(unittest.TestCase):
         self.assertNotIn("allowPrivateNetwork", servers["paperless-mcp"])
         self.assertNotIn("first-secret", json.dumps(config))
 
-    def test_mcp_agent_selection_is_per_server_without_restricting_agent_tools(self) -> None:
+    def test_mcp_agent_selection_filters_foreign_server_tools(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             for default in (None, "", "  ", "*", " * "):
                 with self.subTest(default=default):
@@ -243,8 +245,75 @@ class ConfigBuilderTests(unittest.TestCase):
                     })
                     self.assertEqual(servers["third.test"]["codex"]["agents"], ["haus"])
                     self.assertEqual(config["agents"]["entries"]["main"]["tools"], {
-                        "allow": ["*"], "deny": [],
+                        "allow": ["*"], "deny": ["third-test__*"],
                     })
+
+    def test_personal_mcp_selection_keeps_only_own_and_shared_tools(self) -> None:
+        agents = ("main", "auto", "goldesel", "kaki", "christ", "health", "haus",
+                  "familie", "salesbot", "mtg", "seo")
+        env = {"MCP_SERVER_NAME": "shared", "MCP_SERVER_URL": "https://shared.test/mcp"}
+        for index, agent in enumerate(agents, 2):
+            env.update({f"MCP_SERVER_NAME_{index:02d}": f"litellm-openclaw-{agent}",
+                        f"MCP_SERVER_URL_{index:02d}": "https://gateway.test/mcp",
+                        f"OPENCLAW_ALLOW_{index:02d}": agent})
+        servers = discover_mcp_servers(env)
+        config = {"agents": {"entries": {agent: {} for agent in (*agents, "carassistant")}}}
+        _apply_mcp_agent_tools(config, servers)
+        for agent, entry in config["agents"]["entries"].items():
+            deny = entry["tools"]["deny"]
+            for owner in agents:
+                tool = f"litellm-openclaw-{owner}__switcher-current_state"
+                self.assertEqual(any(fnmatchcase(tool, pattern) for pattern in deny),
+                                 agent != owner, (agent, owner))
+            for tool in ("shared__lookup", "exec", "read", "web_fetch"):
+                self.assertFalse(any(fnmatchcase(tool, pattern) for pattern in deny))
+
+    def test_mcp_filter_handles_normalized_and_colliding_server_names(self) -> None:
+        names = ("1.server", "personal.mcp", "personal-mcp", "A" * 31, "a" * 32)
+        prefixes = ("mcp-1-server", "personal-mcp", "personal-mcp-2", "A" * 30, "a" * 28 + "-2")
+        env = {}
+        for index, name in enumerate(names, 2):
+            env.update({f"MCP_SERVER_NAME_{index:02d}": name,
+                        f"MCP_SERVER_URL_{index:02d}": "https://gateway.test/mcp",
+                        f"OPENCLAW_ALLOW_{index:02d}": "goldesel"})
+        config = {"agents": {"entries": {"main": {}, "goldesel": {}}}}
+        _apply_mcp_agent_tools(config, discover_mcp_servers(env))
+        self.assertEqual(config["agents"]["entries"]["main"]["tools"]["deny"],
+                         [f"{prefix}__*" for prefix in prefixes])
+        self.assertEqual(config["agents"]["entries"]["goldesel"]["tools"]["deny"], [])
+
+    def test_mcp_timeout_is_optional_and_applies_to_every_group(self) -> None:
+        env = {"MCP_SERVER_URL": "https://one.test/mcp", "MCP_SERVER_URL_02": "https://two.test/mcp"}
+        for value, expected in ((None, 10_000), ("", 10_000), ("30", 30_000)):
+            injected = dict(env)
+            if value is not None:
+                injected["OPENCLAW_MCP_TIMEOUT_SECONDS"] = value
+            self.assertEqual([s.openclaw_config()["requestTimeoutMs"]
+                              for s in discover_mcp_servers(injected)], [expected, expected])
+
+    def test_plugin_registry_refresh_preserves_mcp_agent_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            destination = Path(raw) / "openclaw.json"
+            env = {"HOME": raw, "OPENCLAW_CONFIG": str(destination),
+                   "MCP_SERVER_NAME": "personal", "MCP_SERVER_URL": "https://gateway.test/mcp",
+                   "OPENCLAW_ALLOW": "goldesel", "OPENCLAW_MCP_TIMEOUT_SECONDS": "30"}
+
+            def registry_refresh(command, **kwargs):
+                if command[-3:] == ["plugins", "registry", "--refresh"]:
+                    config = json.loads(destination.read_text())
+                    config["agents"]["entries"]["main"]["tools"] = {"allow": ["*"]}
+                    destination.write_text(json.dumps(config))
+                return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+            with (
+                patch("openclaw_ephemeral.configuration.discover_native_models", return_value=((), ())),
+                patch("openclaw_ephemeral.configuration.discover_openai_v1_providers", return_value=((), ())),
+                patch("openclaw_ephemeral.configuration.register_openclaw_plugins", return_value=("test",)),
+            ):
+                configure(env, runner=registry_refresh)
+            written = json.loads(destination.read_text())
+            self.assertEqual(written["agents"]["entries"]["main"]["tools"]["deny"], ["personal__*"])
+            self.assertEqual(written["mcp"]["servers"]["personal"]["requestTimeoutMs"], 30_000)
 
     def test_invalid_mcp_agent_selection_is_rejected(self) -> None:
         for value in (", ,", "main,*", "main,none", "bad/name", "main goldesel", "1main"):
