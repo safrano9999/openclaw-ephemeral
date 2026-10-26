@@ -73,6 +73,13 @@ configurations retain `main` as the owner of system work and Talk, with the
 existing Telegram account routes and a `main` fallback. Session stores remain
 scoped to their agents.
 
+`OPENCLAW_CODEX_CLOUD_APPS` defaults to `1`. Set it to `0` or `false` to
+disable connected ChatGPT apps in the Codex runtime. This sets both OpenClaw's
+native Codex app policy and the app-server's `features.apps` flag. OAuth model
+access and explicitly configured MCP servers remain available. The setting is
+applied to every agent when configuration is rebuilt; restart the gateway to
+replace existing app-server processes.
+
 Every configuration rebuild sets `browser.noSandbox=true` so Chromium can run
 as root inside the container.
 

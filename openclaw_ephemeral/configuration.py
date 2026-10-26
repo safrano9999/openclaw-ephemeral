@@ -645,15 +645,31 @@ def _telegram_config(accounts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _plugins_config(note_full_mode: bool) -> dict[str, Any]:
+def _plugins_config(note_full_mode: bool, environ: Mapping[str, str]) -> dict[str, Any]:
     # The deterministic OpenClaw patch supplies dummy/dummy. The separately
     # installed NOTE extension supplies dummy/note and its direct-capture hook.
     note: dict[str, Any] = {"enabled": True}
     if note_full_mode:
         note["hooks"] = {"allowConversationAccess": True}
+    cloud_apps = boolean(environ, "OPENCLAW_CODEX_CLOUD_APPS", default=True)
     return {
         "entries": {
-            "codex": {"enabled": True, "config": {"discovery": {"timeoutMs": 10_000}}},
+            "codex": {
+                "enabled": True,
+                "config": {
+                    "discovery": {"timeoutMs": 10_000},
+                    "codexPlugins": {
+                        "enabled": cloud_apps,
+                        "allow_all_plugins": cloud_apps,
+                    },
+                    "appServer": {
+                        "args": [
+                            "app-server", "--listen", "stdio://",
+                            "-c", f"features.apps={str(cloud_apps).lower()}",
+                        ],
+                    },
+                },
+            },
             "note": note,
         }
     }
@@ -882,7 +898,7 @@ def build_config(
             telegram_accounts,
             fallback_models,
         ),
-        "plugins": _plugins_config(note_full_mode),
+        "plugins": _plugins_config(note_full_mode, environ),
         "tools": _trusted_container_tools(environ),
     }
     configured_mcp_servers = (

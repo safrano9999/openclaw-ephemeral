@@ -395,6 +395,43 @@ class ConfigBuilderTests(unittest.TestCase):
             self.assertTrue(config["plugins"]["entries"]["codex"]["enabled"])
             self.assertEqual(config["plugins"]["entries"]["codex"]["config"]["discovery"]["timeoutMs"], 10000)
 
+    def test_cloud_apps_switch_preserves_oauth_provider_and_personal_mcp(self) -> None:
+        for value, expected in ((None, True), ("", True), ("1", True), ("true", True), ("0", False), ("false", False)):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as raw:
+                env = {
+                    "HOME": raw,
+                    "OPENCLAW_DEFAULT_PROVIDER": "chatgpt",
+                    "OPENCLAW_DEFAULT_LLM": "gpt-test",
+                    "MCP_SERVER_NAME": "personal",
+                    "MCP_SERVER_URL": "https://gateway.example/mcp",
+                    "MCP_SERVER_BEARER": "personal-secret",
+                    "OPENCLAW_ALLOW": "main",
+                }
+                if value is not None:
+                    env["OPENCLAW_CODEX_CLOUD_APPS"] = value
+                config, _, _ = build_config(
+                    env, destination=Path(raw) / "openclaw.json",
+                    native_models=("openai/gpt-test",),
+                )
+                codex = config["plugins"]["entries"]["codex"]
+                self.assertTrue(codex["enabled"])
+                settings = codex["config"]
+                self.assertEqual(settings["codexPlugins"], {
+                    "enabled": expected, "allow_all_plugins": expected,
+                })
+                self.assertEqual(settings["appServer"]["args"], [
+                    "app-server", "--listen", "stdio://", "-c",
+                    f"features.apps={str(expected).lower()}",
+                ])
+                self.assertEqual(config["agents"]["defaults"]["model"]["primary"], "openai/gpt-test")
+                self.assertEqual(list(config["mcp"]["servers"]), ["personal"])
+                self.assertEqual(config["mcp"]["servers"]["personal"]["headers"]["Authorization"], "Bearer ${MCP_SERVER_BEARER}")
+                self.assertNotIn("personal-secret", json.dumps(config))
+
+    def test_invalid_cloud_apps_switch_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, self.assertRaisesRegex(ConfigurationError, "OPENCLAW_CODEX_CLOUD_APPS"):
+            build_config({"HOME": raw, "OPENCLAW_CODEX_CLOUD_APPS": "maybe"}, destination=Path(raw) / "openclaw.json")
+
     def test_note_full_mode_can_be_disabled_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             destination = Path(raw) / "openclaw.json"
