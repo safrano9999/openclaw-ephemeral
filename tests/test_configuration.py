@@ -753,6 +753,13 @@ class ConfigBuilderTests(unittest.TestCase):
             self.assertNotIn(secrets["telegram"], serialized)
             self.assertNotIn(secrets["telegram_auto"], serialized)
 
+    def test_default_agent_is_explicit_and_must_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = build_config({"HOME": raw, "OPENCLAW_DEFAULT_AGENT": "main"}, destination=Path(raw) / "openclaw.json")
+            self.assertEqual(config["agents"]["defaults"]["systemAgent"], {"agentId": "main"})
+            with self.assertRaises(ConfigurationError):
+                build_config({"HOME": raw, "OPENCLAW_DEFAULT_AGENT": "missing"}, destination=Path(raw) / "openclaw.json")
+
     def test_heartbeats_are_disabled_without_a_telegram_account(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             config, _, _ = build_config(

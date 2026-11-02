@@ -610,9 +610,10 @@ def _main_agent_config(
             },
             "tools": tools,
         }
-    if len(agents) > 1:
-        # Preserve the retired main default marker's ambient system owner.
-        defaults["systemAgent"] = {"agentId": "main"}
+    default_agent = clean(environ.get("OPENCLAW_DEFAULT_AGENT")) or "main"
+    if default_agent not in agents:
+        raise ConfigurationError("OPENCLAW_DEFAULT_AGENT must name a configured agent")
+    defaults["systemAgent"] = {"agentId": default_agent}
     return {"ownership": "explicit", "defaults": defaults, "entries": agents}
 
 
