@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix="openclaw-compatibility-") as scratch:
                                models=("model-a", "model-b"), streaming=True)
     config, _, _ = build_config(injected, destination=home / "generated.json",
                                  openai_v1_providers=(provider,))
+    assert "note" not in config["plugins"]["entries"]
     fixture = home / "fixture.json"
     fixture.write_text(json.dumps(config))
     (home / "cli.json").write_text("{}")

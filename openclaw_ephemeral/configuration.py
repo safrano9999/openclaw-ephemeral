@@ -680,9 +680,9 @@ def _telegram_config(accounts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _plugins_config(note_full_mode: bool, environ: Mapping[str, str]) -> dict[str, Any]:
-    # The deterministic OpenClaw patch supplies dummy/dummy. The separately
-    # installed NOTE extension supplies dummy/note and its direct-capture hook.
+def _plugins_config(note_full_mode: bool, environ: Mapping[str, str], *, note_available: bool) -> dict[str, Any]:
+    # NOTE is optional on the standard runtime. Discovery enables an installed
+    # extension; explicit full mode still requests its conversation hook.
     note: dict[str, Any] = {"enabled": True}
     if note_full_mode:
         note["hooks"] = {"allowConversationAccess": True}
@@ -705,7 +705,7 @@ def _plugins_config(note_full_mode: bool, environ: Mapping[str, str]) -> dict[st
                     },
                 },
             },
-            "note": note,
+            **({"note": note} if note_full_mode or note_available else {}),
         }
     }
 
@@ -933,7 +933,7 @@ def build_config(
             telegram_accounts,
             fallback_models,
         ),
-        "plugins": _plugins_config(note_full_mode, environ),
+        "plugins": _plugins_config(note_full_mode, environ, note_available=NOTE_MODEL in native_models),
         "tools": _trusted_container_tools(environ),
     }
     configured_mcp_servers = (
