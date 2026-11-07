@@ -8,10 +8,10 @@ The repository is centered on the executable `openclaw-ephemeral.py`, the
 `openclaw_ephemeral` package, and their tests. Container packaging is optional
 and isolated below `container/`.
 
-Deterministic is an independent optional input to the parent image. Ephemeral
-does not download, patch, build, or replace OpenClaw's `dist` directory. In the
-Fedora Core recipe, the Deterministic archive is installed first and Ephemeral's
-Python/runtime files are installed in a separate second step.
+Ephemeral does not download, patch, build, or replace OpenClaw's `dist`
+directory. Fedora's 2026.11.1 cascade inherits standard OpenClaw from Core-pre;
+Core adds Ephemeral and the Brave, Codex, MAI and Speaches plugins. Older
+Deterministic installations remain supported as optional runtime inputs.
 
 Models come from OpenClaw's discovered catalog and explicit provider/model
 configuration. Discovery checks the installed local model catalog even without API keys.
@@ -320,6 +320,13 @@ Bearers are stored as environment placeholders such as
 `Bearer ${MCP_SERVER_BEARER_02}`, never as resolved tokens.
 Set the matching `MCP_SERVER_ALLOW_PRIVATE[_NN]` to `1` only for a trusted MCP
 endpoint on loopback, a private network, or a link-local host alias.
+Ephemeral preserves this per-server `allowPrivateNetwork` option for older
+patched runtimes. Standard OpenClaw 2026.11.1 already trusts the exact origin
+of an explicitly configured MCP URL, including private addresses. It does not
+need the Deterministic patch, and `0` is not a private-network deny rule on
+that release. Redirects to other private origins are still checked separately.
+The integration job exercises discovery and a tool call against a loopback
+MCP server with the actual installed OpenClaw runtime.
 
 Secret values are represented through environment references in the generated
 configuration. The runtime does not serialize resolved credentials into its
