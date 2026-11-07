@@ -41,4 +41,4 @@ jobs:
           UPGRADE_TARGET_VERSION: "2026.11.1"
           UPGRADE_TARGET_PACKAGE: ${{ runner.temp }}/upstream/node_modules/openclaw
           PYTHONPATH: ${{ github.workspace }}
-        run: python3 tests/integration/openclaw_config.py
+        run: timeout 180 python3 tests/integration/openclaw_config.py

@@ -109,7 +109,12 @@ test("configured provider models appear without invented dummy routes", () => {
   assert.ok(rows.every(row => !String(row.key ?? row.id ?? row.model).startsWith("dummy/")));
 });
 
-test("native MCP discovers and calls an explicitly configured private server", {timeout: 120000}, async () => {
+test("native MCP discovers and calls an explicitly configured private server", {timeout: 120000}, async (t) => {
+  const directModule = path.join(installed, "dist/agents/agent-bundle-mcp-runtime.js");
+  const createSessionMcpRuntime = fs.existsSync(directModule)
+    ? (await import(pathToFileURL(directModule))).createSessionMcpRuntime
+    : await releaseFunction("createSessionMcpRuntime");
+  assert.equal(typeof createSessionMcpRuntime, "function");
   const requests = [];
   const server = http.createServer(async (request, response) => {
     if (request.method !== "POST") { response.writeHead(405).end(); return; }
@@ -133,7 +138,7 @@ test("native MCP discovers and calls an explicitly configured private server", {
         {error: {code: -32601, message: "Method not found"}})}));
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  const createSessionMcpRuntime = await releaseFunction("createSessionMcpRuntime");
+  t.after(() => { server.closeAllConnections(); server.close(); });
   const cfg = structuredClone(config);
   cfg.mcp.servers = {general: {...cfg.mcp.servers.general,
     url: `http://127.0.0.1:${server.address().port}/mcp`,
