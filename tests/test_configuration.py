@@ -501,6 +501,15 @@ class ConfigBuilderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw, self.assertRaisesRegex(ConfigurationError, "OPENCLAW_CODEX_CLOUD_APPS"):
             build_config({"HOME": raw, "OPENCLAW_CODEX_CLOUD_APPS": "maybe"}, destination=Path(raw) / "openclaw.json")
 
+    def test_standard_runtime_does_not_enable_absent_note(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, full_mode = build_config(
+                {"HOME": raw}, destination=Path(raw) / "openclaw.json",
+                native_models=("openai/model-fixture",),
+            )
+            self.assertFalse(full_mode)
+            self.assertNotIn("note", config["plugins"]["entries"])
+
     def test_note_full_mode_can_be_disabled_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             destination = Path(raw) / "openclaw.json"
