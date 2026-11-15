@@ -156,13 +156,17 @@ defaults so the batch includes it even when it is not the selected primary.
 These references contain no model-name seeds; `modelPolicy.allow: []` keeps
 model access unrestricted for every agent.
 
-The existing `openclaw-ephemeral-schedule.service` refreshes the catalog before
-dispatching init hooks. On OpenClaw **2026.11.3**, its
-`openclaw-openai-refresh.py` pre-start helper enumerates `agents.list` and calls
+The `openclaw-ephemeral-schedule.service` dispatches schedules and init hooks
+without forcing a catalog refresh. The former `ExecStartPre` refresh is commented
+out: it was a workaround for an older OpenClaw bug. Normal catalog handling is
+owned by OpenClaw; provider discovery failures no longer block this service.
+
+The retained `openclaw-openai-refresh.py` helper is manual-only. On OpenClaw
+**2026.11.3**, it enumerates `agents.list` and calls
 the native `models.list` Gateway method with `refresh: true` and
 `view: "provider-config"` for each agent. This reads provider discovery outcomes
 instead of the selected account/runtime's projected catalog.
-It rejects failed provider discovery before dispatching init hooks. This avoids
+It rejects failed provider discovery. This avoids
 loading the internal host publisher from a plugin capture, where worker assets
 and SDK dependencies can be missing. Refreshes run sequentially; provider
 acquisitions are not guaranteed to be shared across agents.
