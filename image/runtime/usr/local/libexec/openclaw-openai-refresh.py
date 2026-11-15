@@ -34,6 +34,33 @@ def run_openclaw(args: list[str]):
     return result
 
 
+def refresh_native_catalogs() -> int:
+    result = run_openclaw(["gateway", "call", "agents.list", "--json", "--timeout", "30000"])
+    if result is None:
+        return 1
+    agents = json.loads(result.stdout)["agents"]
+    if not agents:
+        raise ValueError("Gateway returned no agents")
+    for agent in agents:
+        agent_id = agent["id"]
+        result = run_openclaw([
+            "gateway", "call", "models.list", "--params",
+            json.dumps({"agentId": agent_id, "refresh": True, "view": "provider-config"}),
+            "--json", "--timeout", "180000",
+        ])
+        if result is None:
+            print(f"Catalog refresh failed for agent {agent_id}", flush=True)
+            return 1
+        catalog = json.loads(result.stdout)
+        failures = [outcome for outcome in catalog.get("providerOutcomes", [])
+                    if outcome.get("status") != "ready"]
+        if failures or catalog.get("refreshFailed") or catalog.get("pendingProviders"):
+            print(redact(f"Agent {agent_id}: provider discovery failed: {failures}"), flush=True)
+            return 1
+        print(f"Agent {agent_id}: {len(catalog['models'])} catalog models", flush=True)
+    return 0
+
+
 def main() -> int:
     result = run_openclaw(["--version"])
     if result is None:
@@ -46,6 +73,10 @@ def main() -> int:
     # Replaced: openclaw models list --provider openai --refresh
     # --provider filters output; it does not publish catalogs to every agent.
     print("Refreshing and publishing model catalogs for all agents", flush=True)
+    if match.group("version") == "2026.11.3":
+        # Run in the gateway's native ownership context. Importing its internal
+        # publisher from a plugin captures host code without worker assets.
+        return refresh_native_catalogs()
     result = run_openclaw(["gateway", "call", "ephemeral.models.refresh",
                            "--json", "--timeout", "420000"])
     if result is None:

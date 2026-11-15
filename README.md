@@ -157,21 +157,27 @@ These references contain no model-name seeds; `modelPolicy.allow: []` keeps
 model access unrestricted for every agent.
 
 The existing `openclaw-ephemeral-schedule.service` refreshes the catalog before
-dispatching init hooks. Its `openclaw-openai-refresh.py` pre-start helper now calls
-the authenticated `ephemeral.models.refresh` Gateway method once. There is no
-separate OpenAI refresh and no per-agent discovery loop. OpenAI participates in
-the same publication as the other providers.
+dispatching init hooks. On OpenClaw **2026.11.3**, its
+`openclaw-openai-refresh.py` pre-start helper enumerates `agents.list` and calls
+the native `models.list` Gateway method with `refresh: true` and
+`view: "provider-config"` for each agent. This reads provider discovery outcomes
+instead of the selected account/runtime's projected catalog.
+It rejects failed provider discovery before dispatching init hooks. This avoids
+loading the internal host publisher from a plugin capture, where worker assets
+and SDK dependencies can be missing. Refreshes run sequentially; provider
+acquisitions are not guaranteed to be shared across agents.
 
-The method uses OpenClaw's native batch lifecycle to publish catalogs for every
+On **2026.9.4**, the helper retains the `ephemeral.models.refresh` method.
+That method uses OpenClaw's native batch lifecycle to publish catalogs for every
 configured agent and notify existing chat sessions. During that batch, injected
 provider acquisitions are shared only for identical provider, URL, credential,
 profile and header inputs. The batch cache is released on success or failure.
 The old once-per-boot marker is no longer used, so the helper can also be invoked
 for later updates without dispatching webhooks.
 
-The batch lifecycle entry point is internal to OpenClaw **2026.9.4**. Both the
-helper and bridge reject other versions; this integration must be reviewed when
-upgrading OpenClaw. The bridge does not modify the installed OpenClaw files.
+The legacy batch lifecycle entry point is internal to OpenClaw. The helper
+accepts only **2026.9.4** and **2026.11.3**; this integration must be reviewed
+when upgrading OpenClaw. The bridge does not modify the installed OpenClaw files.
 `OPENAI_V1_MODELS` seeds apply only to that eager path. The generated plugin lives
 under `OPENCLAW_STATE_DIR/generated-plugins/ephemeral-openai-v1` (or the normal
 state-directory fallback), is registered with explicit load paths, and contains

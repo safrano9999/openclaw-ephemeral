@@ -54,7 +54,7 @@ assert.equal(globalThis[BATCH_CACHE],undefined);
         spec.loader.exec_module(module)
         def run(argv, **kwargs):
             if argv == ["openclaw", "--version"]:
-                return subprocess.CompletedProcess(argv, 0, stdout="OpenClaw 2026.11.3 (test)\n")
+                return subprocess.CompletedProcess(argv, 0, stdout="OpenClaw 2026.9.4 (test)\n")
             self.assertEqual(argv[:4], ["openclaw", "gateway", "call", "ephemeral.models.refresh"])
             return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({
                 "agents": [{"agentId": "main", "models": 3}],
@@ -65,6 +65,31 @@ assert.equal(globalThis[BATCH_CACHE],undefined);
             self.assertEqual(module.main(), 0)
             self.assertEqual(module.main(), 0)
         self.assertEqual(runner.call_count, 4)
+
+    def test_native_refresh_covers_all_agents_and_rejects_failed_discovery(self):
+        path = Path(__file__).resolve().parents[1] / "image/runtime/usr/local/libexec/openclaw-openai-refresh.py"
+        spec = importlib.util.spec_from_file_location("catalog_native", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for failed in (False, True):
+            seen = []
+            def run(argv, **kwargs):
+                if argv == ["openclaw", "--version"]:
+                    payload = "OpenClaw 2026.11.3 (test)\n"
+                elif argv[3] == "agents.list":
+                    payload = json.dumps({"agents": [{"id": "main"}, {"id": "seo"}]})
+                else:
+                    self.assertEqual(argv[3], "models.list")
+                    params = json.loads(argv[argv.index("--params") + 1])
+                    self.assertTrue(params["refresh"])
+                    self.assertEqual(params["view"], "provider-config")
+                    seen.append(params["agentId"])
+                    payload = json.dumps({"models": [{"id": "m"}], "providerOutcomes": [
+                        {"provider": "injected", "status": "error" if failed else "ready"}]})
+                return subprocess.CompletedProcess(argv, 0, stdout=payload)
+            with patch.object(module.subprocess, "run", side_effect=run):
+                self.assertEqual(module.main(), 1 if failed else 0)
+            self.assertEqual(seen, ["main"] if failed else ["main", "seo"])
 
     def test_init_failure_logs_command_output_without_credentials(self):
         path = Path(__file__).resolve().parents[1] / "image/runtime/usr/local/libexec/openclaw-openai-refresh.py"
