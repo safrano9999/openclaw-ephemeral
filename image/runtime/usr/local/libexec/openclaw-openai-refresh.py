@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 
-EXPECTED_VERSION = "2026.9.4"
+SUPPORTED_VERSIONS = {"2026.9.4", "2026.11.3"}
 VERSION_LINE = re.compile(r"^OpenClaw (?P<version>\d+\.\d+\.\d+) \([^\n]+\)$")
 
 
@@ -40,8 +40,8 @@ def main() -> int:
         return 1
     line = result.stdout.strip()
     match = VERSION_LINE.fullmatch(line)
-    if match is None or match.group("version") != EXPECTED_VERSION:
-        print(f"Catalog refresh requires OpenClaw {EXPECTED_VERSION}; got {line or 'unknown'}")
+    if match is None or match.group("version") not in SUPPORTED_VERSIONS:
+        print(f"Unsupported OpenClaw catalog refresh version: {line or 'unknown'}")
         return 1
     # Replaced: openclaw models list --provider openai --refresh
     # --provider filters output; it does not publish catalogs to every agent.

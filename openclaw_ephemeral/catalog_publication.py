@@ -13,7 +13,8 @@ async function loadBatchPublisher() {
   const require = createRequire(await realpath(process.argv[1]));
   const dist = new URL("../", pathToFileURL(require.resolve("openclaw/plugin-sdk/agent-runtime")));
   const pkg = JSON.parse(await readFile(new URL("../package.json", dist), "utf8"));
-  if (pkg.version !== "2026.9.4") throw new Error("Unsupported OpenClaw catalog publication version");
+  if (!["2026.9.4", "2026.11.3"].includes(pkg.version))
+    throw new Error("Unsupported OpenClaw catalog publication version");
   for (const file of (await readdir(dist)).sort()) {
     if (!/^prepared-model-runtime-[^.]+\.mjs$/.test(file)) continue;
     const module = await import(new URL(file, dist).href);

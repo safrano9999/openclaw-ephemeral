@@ -45,6 +45,24 @@ test("exact installed upstream version without Deterministic", () => {
   }
 });
 
+test("catalog batch publisher and snapshot SDK remain available", async () => {
+  const sdk = await import(pathToFileURL(path.join(installed, "dist/plugin-sdk/agent-runtime.js")).href);
+  assert.equal(typeof sdk.getPreparedModelCatalogSnapshot, "function");
+  assert.equal(typeof sdk.listAgentIds, "function");
+  let publisher;
+  for (const file of fs.readdirSync(path.join(installed, "dist")).sort()) {
+    if (!/^prepared-model-runtime-[^.]+\.mjs$/.test(file)) continue;
+    const module = await import(pathToFileURL(path.join(installed, "dist", file)).href);
+    if (typeof module.refreshPreparedModelRuntimeSnapshots === "function") {
+      publisher = module.refreshPreparedModelRuntimeSnapshots;
+      break;
+    }
+  }
+  assert.equal(typeof publisher, "function");
+  // A stale publication is explicitly rejected before acquiring any catalogs.
+  await publisher({}, { isPublicationCurrent: () => false });
+});
+
 test("upstream accepts generated agent, model, MCP and plugin configuration", () => {
   const result = validateConfigObjectRaw(config);
   assert.equal(result.ok, true, JSON.stringify(result.issues));

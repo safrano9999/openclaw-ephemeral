@@ -35,10 +35,10 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install the standard OpenClaw release
-        run: npm install --prefix "$RUNNER_TEMP/upstream" --omit=dev --no-audit --no-fund openclaw@2026.11.1
+        run: npm install --prefix "$RUNNER_TEMP/upstream" --omit=dev --no-audit --no-fund openclaw@2026.11.3
       - name: Check native models, agent filters and private MCP transport
         env:
-          UPGRADE_TARGET_VERSION: "2026.11.1"
+          UPGRADE_TARGET_VERSION: "2026.11.3"
           UPGRADE_TARGET_PACKAGE: ${{ runner.temp }}/upstream/node_modules/openclaw
           PYTHONPATH: ${{ github.workspace }}
         run: timeout 180 python3 tests/integration/openclaw_config.py

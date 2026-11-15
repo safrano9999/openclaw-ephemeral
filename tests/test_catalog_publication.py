@@ -54,7 +54,7 @@ assert.equal(globalThis[BATCH_CACHE],undefined);
         spec.loader.exec_module(module)
         def run(argv, **kwargs):
             if argv == ["openclaw", "--version"]:
-                return subprocess.CompletedProcess(argv, 0, stdout="OpenClaw 2026.9.4 (test)\n")
+                return subprocess.CompletedProcess(argv, 0, stdout="OpenClaw 2026.11.3 (test)\n")
             self.assertEqual(argv[:4], ["openclaw", "gateway", "call", "ephemeral.models.refresh"])
             return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({
                 "agents": [{"agentId": "main", "models": 3}],
