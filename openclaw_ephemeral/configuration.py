@@ -20,6 +20,7 @@ from .environment import (
     boolean,
     clean,
     config_path,
+    config_writer_environment,
     expand_api_key_aliases,
     integer,
     openclaw_command,
@@ -980,7 +981,7 @@ def configure(
 ) -> ConfigurationResult:
     """Discover providers, rebuild the config from scratch, and atomically write it."""
 
-    injected = expand_api_key_aliases(os.environ if environ is None else environ)
+    injected = expand_api_key_aliases(config_writer_environment(os.environ if environ is None else environ))
     destination = config_path(injected)
     restore_image_plugin_installs(injected, destination=destination)
     discovered_plugins, plugin_warnings = discover_openclaw_plugins(

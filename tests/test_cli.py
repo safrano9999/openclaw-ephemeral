@@ -47,6 +47,44 @@ def make_hook(
 
 
 class CliLifecycleTests(unittest.TestCase):
+    def test_readonly_gateway_keeps_configure_and_all_hooks_writable(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            hooks = Path(raw) / "runtime.d"
+            for phase in ("pre-config", "post-config", "pre-gateway"):
+                make_hook(hooks, phase, "10-writer.sh")
+            original = {"HOME": raw, "OPENCLAW_CONFIG_READONLY": "1"}
+            phases = []
+
+            def configure(env, **kwargs):
+                self.assertEqual(env["OPENCLAW_CONFIG_READONLY"], "0")
+                phases.append("configure")
+                return result(Path(raw) / "openclaw.json")
+
+            def runner(args, **kwargs):
+                self.assertEqual(kwargs["env"]["OPENCLAW_CONFIG_READONLY"], "0")
+                phases.append(args[0])
+
+            def execute(binary, args, env):
+                self.assertEqual(env["OPENCLAW_CONFIG_READONLY"], "1")
+                self.assertEqual(args[1:3], ["gateway", "run"])
+                raise ExecCalled()
+
+            with patch("openclaw_ephemeral.cli.RUNTIME_HOOK_ROOT", hooks), \
+                 patch("openclaw_ephemeral.cli.configure", side_effect=configure):
+                with self.assertRaises(ExecCalled):
+                    main(["run"], environ=original, runner=runner, execvpe=execute,
+                         stdout=io.StringIO(), stderr=io.StringIO())
+            self.assertEqual(len(phases), 5)
+            self.assertEqual(original["OPENCLAW_CONFIG_READONLY"], "1")
+
+    def test_invalid_readonly_flag_fails_before_configuration(self) -> None:
+        with patch("openclaw_ephemeral.cli.configure") as configure:
+            error = io.StringIO()
+            self.assertEqual(main(["configure"], environ={"OPENCLAW_CONFIG_READONLY": "maybe"},
+                                  stdout=io.StringIO(), stderr=error), 2)
+            configure.assert_not_called()
+            self.assertIn("OPENCLAW_CONFIG_READONLY must be 0 or 1", error.getvalue())
+
     def test_configure_mode_applies_policy_without_hooks_or_gateway(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             hook_root = Path(raw) / "runtime.d"

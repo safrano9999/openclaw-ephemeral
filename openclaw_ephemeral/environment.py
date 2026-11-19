@@ -236,3 +236,14 @@ def without_secret_values(value: Any, secret_values: set[str]) -> bool:
     if isinstance(value, (list, tuple, set)):
         return all(without_secret_values(item, secret_values) for item in value)
     return True
+
+
+def config_writer_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """Allow the external config owner to write before the immutable Gateway starts."""
+    result = dict(environ)
+    if "OPENCLAW_CONFIG_READONLY" in result:
+        value = result["OPENCLAW_CONFIG_READONLY"].strip()
+        if value not in {"0", "1"}:
+            raise ConfigurationError("OPENCLAW_CONFIG_READONLY must be 0 or 1")
+        result["OPENCLAW_CONFIG_READONLY"] = "0"
+    return result

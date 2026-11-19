@@ -183,3 +183,16 @@ test("native MCP discovers and calls an explicitly configured private server", {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test("externally managed config rejects OpenClaw writes without altering the generated file", () => {
+  const configPath = process.env.OPENCLAW_CONFIG_PATH;
+  const before = fs.readFileSync(configPath);
+  const result = spawnSync(process.execPath,
+    [path.join(installed, 'openclaw.mjs'), 'config', 'set', 'gateway.mode', 'local'],
+    {env: {...process.env, OPENCLAW_CONFIG_READONLY: '1', OPENCLAW_DEBUG: '1'},
+     encoding: 'utf8', timeout: 60000});
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /OPENCLAW_CONFIG_READONLY|externally managed/);
+  assert.deepEqual(fs.readFileSync(configPath), before);
+});

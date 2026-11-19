@@ -8,6 +8,8 @@ Before=openclaw.service
 [Service]
 Type=oneshot
 Environment=HOME=/root
+# This service owns generated config, including ExecStartPost plugin setup.
+Environment=OPENCLAW_CONFIG_READONLY=0
 ExecCondition=/bin/bash -c '[ "$${OPENCLAW_START:-1}" = "1" ]'
 ExecStart=/usr/local/bin/openclaw-ephemeral.py configure
 RemainAfterExit=yes

@@ -465,3 +465,19 @@ no image-specific hostname or port default. The gateway keeps its separate
 Only installed plugins with matching schema fields receive these settings.
 The MAI bearer stays an environment reference in generated JSON. Existing
 Voice init hooks and their provider selection remain separate and unchanged.
+
+### Externally managed generated configuration
+
+Set `OPENCLAW_CONFIG_READONLY=1` to keep OpenClaw from replacing the generated
+`openclaw.json` with an older backup when its size or content changes. The Gateway
+also refuses runtime config writes in this mode; edit the deployment environment
+and regenerate instead. Use `0` to retain OpenClaw's ordinary writable behavior.
+
+The standalone `run` command grants its configure/policy/init phases a writable
+child environment and restores the requested flag for the Gateway process.
+The systemd `openclaw-config.service` (including Bridge `ExecStartPost`) and the
+Fedora init-hooks drop-in explicitly use `OPENCLAW_CONFIG_READONLY=0`.
+`openclaw.service` inherits the requested flag from the container. Keep these
+service overrides when integrating the runtime; setting the flag globally without
+writer overrides would block plugin initialization through `openclaw config set`.
+The JSON stays ephemeral; persistent state and session mounts are unchanged.

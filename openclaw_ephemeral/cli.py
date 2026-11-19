@@ -16,6 +16,7 @@ from . import __version__
 from .configuration import ConfigurationResult, configure
 from .environment import (
     ConfigurationError,
+    config_writer_environment,
     expand_api_key_aliases,
     integer,
     openclaw_command,
@@ -183,6 +184,8 @@ def main(
                 print(text, file=stdout)
             return 0
 
+        gateway_env = expand_api_key_aliases(injected)
+        injected = config_writer_environment(injected)
         if args.mode == "run":
             _run_runtime_hooks("pre-config", injected, runner)
 
@@ -230,13 +233,13 @@ def main(
                     [*ephemeral_command(), "schedule"],
                     env=runtime_env,
                 )
-            execvpe(arguments[0], arguments, runtime_env)
+            execvpe(arguments[0], arguments, gateway_env)
             raise RuntimeError("gateway exec unexpectedly returned")
 
         runner(
             [*command, "gateway", "restart"],
             check=True,
-            env=runtime_env,
+            env=gateway_env,
         )
         return 0
     except ConfigurationError as exc:
